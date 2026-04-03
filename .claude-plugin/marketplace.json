@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "vibeval",
-      "source": "./",
+      "source": "./plugin",
       "description": "vibeval (Vibe Coding Eval) — AI application testing workflow for Claude Code"
     }
   ]
