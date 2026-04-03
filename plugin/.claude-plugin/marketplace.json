@@ -1,0 +1,13 @@
+{
+  "name": "vibeval-marketplace",
+  "owner": {
+    "name": "vibeval"
+  },
+  "plugins": [
+    {
+      "name": "vibeval",
+      "source": "./",
+      "description": "vibeval (Vibe Coding Eval) — AI application testing workflow for Claude Code"
+    }
+  ]
+}

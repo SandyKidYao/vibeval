@@ -1,0 +1,8 @@
+{
+  "_id": "planning",
+  "meeting_id": "mtg-plan-001",
+  "_tags": ["planning", "deadlines"],
+  "speakers": ["Diana", "Eve"],
+  "text": "Diana: Let's go over the project timeline. Phase 1 needs to be completed by June 30th. The kickoff was on January 15th.\n\nEve: Right. The mid-project review is scheduled for April 15th at 10:00 AM. We also have weekly syncs every Tuesday at 3:30 PM.\n\nDiana: The final demo is on July 5th. We need to submit the report by end of day July 10th.\n\nEve: Got it. I'll set up the sprint planning for next Monday at 9:30 AM.",
+  "expected_times": ["June 30th", "January 15th", "April 15th", "10:00 AM", "Tuesday", "3:30 PM", "July 5th", "July 10th", "Monday", "9:30 AM"]
+}

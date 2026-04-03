@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vibeval"
+version = "0.1.0"
+description = "vibeval (Vibe Coding Eval) — AI application testing framework"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "SandyKid", email = "yupengyao912@gmail.com"}]
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+vibeval = "vibeval.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vibeval"]
+
+[project.urls]
+Homepage = "https://github.com/SandyKidYao/vibeval"
+Repository = "https://github.com/SandyKidYao/vibeval"
+Issues = "https://github.com/SandyKidYao/vibeval/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,8 @@
+{
+  "_id": "standup",
+  "meeting_id": "mtg-standup-001",
+  "_tags": ["standup", "multiple-times"],
+  "speakers": ["Alice", "Bob", "Charlie"],
+  "text": "Alice: Good morning everyone. It's 9:00 AM, let's start our standup. Bob, what did you work on yesterday?\n\nBob: Yesterday I finished the API refactoring that was due by March 15th. Today I'll work on the database migration, which needs to be done before the 3:00 PM deployment window.\n\nAlice: Great. Charlie?\n\nCharlie: I have a meeting with the client at 2:30 PM today to discuss the Q2 roadmap. The proposal deadline is April 1st. I'll also review Bob's PR before 11:00 AM.\n\nAlice: Perfect. Remember the all-hands is at 4:00 PM today. Let's wrap up by 9:15 AM.",
+  "expected_times": ["9:00 AM", "March 15th", "3:00 PM", "2:30 PM", "April 1st", "11:00 AM", "4:00 PM", "9:15 AM"]
+}

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# pytest
+.pytest_cache/
+
+
+# vibeval results (generated at runtime)
+.vibeval/
+**/results/
+**/comparisons/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
