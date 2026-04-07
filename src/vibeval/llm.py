@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 from typing import Any
@@ -183,55 +182,98 @@ def _filter_trace(
     return None, steps_only
 
 
+def check_claude_code() -> None:
+    """Check that Claude Code CLI is installed, authenticated, and working.
+
+    Sends a minimal prompt to verify the full chain: installation, auth, and API access.
+    """
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "hello", "--output-format", "text"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            raise RuntimeError(
+                "Claude Code CLI is installed but failed to respond.\n"
+                f"Error: {stderr}\n\n"
+                "Possible causes:\n"
+                "- Not logged in: run 'claude login' to authenticate\n"
+                "- API key not configured: check your Claude Code settings\n"
+                "- Network issue: verify your internet connection\n\n"
+                "Alternatively, configure a custom LLM command in .vibeval.yml:\n"
+                "  judge:\n"
+                "    llm:\n"
+                "      provider: command\n"
+                "      command: \"your-llm-cli --prompt-stdin\""
+            )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "Claude Code CLI ('claude') is not installed or not in PATH.\n"
+            "vibeval requires Claude Code as the default LLM provider.\n"
+            "Install: npm install -g @anthropic-ai/claude-code\n"
+            "Docs: https://docs.anthropic.com/en/docs/claude-code\n\n"
+            "Alternatively, configure a custom LLM command in .vibeval.yml:\n"
+            "  judge:\n"
+            "    llm:\n"
+            "      provider: command\n"
+            "      command: \"your-llm-cli --prompt-stdin\""
+        )
+
+
 def _call_llm(prompt: str, config: LLMConfig) -> str:
     """Call the LLM via the configured provider."""
     if config.provider == "claude-code":
-        return _call_claude_code(prompt)
-    elif config.provider == "openai":
-        return _call_openai(prompt, config)
-    elif config.provider == "anthropic":
-        return _call_anthropic(prompt, config)
+        return _call_claude_code(prompt, config)
+    elif config.provider == "command":
+        return _call_custom_command(prompt, config)
     else:
-        raise ValueError(f"Unknown LLM provider: {config.provider}")
+        raise ValueError(
+            f"Unknown LLM provider: '{config.provider}'. "
+            f"Supported providers: 'claude-code', 'command'."
+        )
 
 
-def _call_claude_code(prompt: str) -> str:
+def _call_claude_code(prompt: str, config: LLMConfig) -> str:
     """Call Claude Code CLI: claude -p '<prompt>' --output-format text"""
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--output-format", "text"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    check_claude_code()
+    cmd = ["claude", "-p", prompt, "--output-format", "text"]
+    if config.model:
+        cmd.extend(["--model", config.model])
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         raise RuntimeError(f"Claude Code CLI error: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
-def _call_openai(prompt: str, config: LLMConfig) -> str:
-    """Call OpenAI API."""
-    import openai
-    api_key = os.environ.get(config.api_key_env, "")
-    client = openai.OpenAI(api_key=api_key)
-    resp = client.chat.completions.create(
-        model=config.model or "gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-    )
-    return resp.choices[0].message.content or ""
+def _call_custom_command(prompt: str, config: LLMConfig) -> str:
+    """Call a user-defined command, passing the prompt via stdin.
 
-
-def _call_anthropic(prompt: str, config: LLMConfig) -> str:
-    """Call Anthropic API."""
-    import anthropic
-    api_key = os.environ.get(config.api_key_env, "")
-    client = anthropic.Anthropic(api_key=api_key)
-    resp = client.messages.create(
-        model=config.model or "claude-sonnet-4-6",
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+    The command should read the prompt from stdin and write the
+    LLM response to stdout.
+    """
+    if not config.command:
+        raise ValueError(
+            "Provider is 'command' but no command is configured.\n"
+            "Set it in .vibeval.yml:\n"
+            "  judge:\n"
+            "    llm:\n"
+            "      provider: command\n"
+            "      command: \"your-llm-cli\""
+        )
+    result = subprocess.run(
+        config.command,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        shell=True,
+        timeout=120,
     )
-    return resp.content[0].text if resp.content else ""
+    if result.returncode != 0:
+        raise RuntimeError(f"Custom LLM command error: {result.stderr.strip()}")
+    return result.stdout.strip()
 
 
 def _parse_response(response: str, scoring: str) -> dict[str, Any]:

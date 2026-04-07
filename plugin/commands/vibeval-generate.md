@@ -15,15 +15,84 @@ Read the design file and vibeval protocol references before generating. In parti
 
 ## Generation Steps
 
-### 1. Generate .vibeval.yml
+### 1. Confirm LLM Provider
 
-If `.vibeval.yml` does not exist at project root, create:
+Before generating, ask the user which LLM provider to use for evaluation (judge and simulate):
 
-```yaml
-vibeval_root: tests/vibeval
-```
+> vibeval 的评估和用户模拟需要调用 LLM。你想使用哪种方式？
+> 1. **默认（Claude Code）** — 使用已安装的 Claude Code CLI
+> 2. **自定义 LLM** — 编写一个自定义脚本来接入你自己的 LLM
 
-### 2. Generate Datasets
+#### If the user chooses default (Claude Code)
+
+Run `claude -p "hello" --output-format text` to verify Claude Code CLI is installed, authenticated, and working.
+
+- **If successful** (exit code 0 and returns a response): proceed normally. Generate `.vibeval.yml` without `judge.llm` section (defaults to `claude-code`).
+- **If command not found**: Claude Code is not installed.
+  - Install: `npm install -g @anthropic-ai/claude-code`
+  - Docs: https://docs.anthropic.com/en/docs/claude-code
+- **If command fails** (non-zero exit code): Claude Code is installed but not properly configured.
+  - Not logged in: run `claude login` to authenticate
+  - API key issue: check Claude Code settings
+  - Network issue: verify internet connection
+
+  In either failure case, inform the user and offer the custom LLM option as an alternative. Do NOT proceed with generation until the user resolves the issue or switches to the custom option.
+
+#### If the user chooses custom LLM
+
+Explain what they need to build:
+
+1. **Write a script** (any language) that:
+   - Reads the evaluation prompt from **stdin**
+   - Calls their LLM (OpenAI, Ollama, local model, etc.)
+   - Writes the LLM response to **stdout**
+   - Exits with code 0 on success, non-zero on failure
+
+   Example (Python with OpenAI):
+   ```python
+   #!/usr/bin/env python3
+   import sys
+   import openai
+
+   prompt = sys.stdin.read()
+   client = openai.OpenAI()  # uses OPENAI_API_KEY env var
+   resp = client.chat.completions.create(
+       model="gpt-4o",
+       messages=[{"role": "user", "content": prompt}],
+       temperature=0.0,
+   )
+   print(resp.choices[0].message.content)
+   ```
+
+2. **Configure `.vibeval.yml`** to use it:
+   ```yaml
+   vibeval_root: tests/vibeval
+   judge:
+     llm:
+       provider: command
+       command: "python3 path/to/my_llm.py"
+   ```
+
+After the user confirms their choice and the provider is ready, proceed to Step 2.
+
+### 2. Generate .vibeval.yml
+
+If `.vibeval.yml` does not exist at project root, create it.
+
+- If using default Claude Code: only set `vibeval_root`
+  ```yaml
+  vibeval_root: tests/vibeval
+  ```
+- If using custom LLM: include the `judge.llm` section with the user's command
+  ```yaml
+  vibeval_root: tests/vibeval
+  judge:
+    llm:
+      provider: command
+      command: "python3 path/to/my_llm.py"
+  ```
+
+### 3. Generate Datasets
 
 For each dataset in the design, create:
 
@@ -38,7 +107,7 @@ tests/vibeval/{feature}/datasets/{dataset_name}/
 
 **Data items**: generate synthetic data applying the information asymmetry principle (see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
 
-### 3. Generate Test Code
+### 4. Generate Test Code
 
 Generate test files in `tests/vibeval/{feature}/tests/` using the user's test framework.
 
@@ -48,7 +117,7 @@ Generate test files in `tests/vibeval/{feature}/tests/` using the user's test fr
 - All helpers (result collector, dataset loader) are generated inline using standard library only
 - For multi-turn user simulation, shell out to `vibeval simulate` CLI
 
-#### 3a. Generate VibevalResultCollector (inline helper)
+#### 4a. Generate VibevalResultCollector (inline helper)
 
 Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md`.
 
@@ -71,7 +140,7 @@ collector.save(run_id="latest")
 
 This pattern is identical for single-turn (1 turn) and multi-turn (N turns).
 
-#### 3b. Generate Single-Turn Tests
+#### 4b. Generate Single-Turn Tests
 
 For single-turn pipelines, generate a test function that:
 1. Receives data item from parameterized fixture
@@ -104,7 +173,7 @@ def test_summarize(meeting_item):
     collector.save(run_id="latest")
 ```
 
-#### 3c. Generate Multi-Turn Tests
+#### 4c. Generate Multi-Turn Tests
 
 For multi-turn pipelines, generate a test function that:
 1. Receives persona from parameterized fixture
@@ -171,7 +240,7 @@ def test_chatbot_safety(persona_item):
 
 If `use_vibeval_simulate: false` in design, the user handles user simulation themselves — just generate the loop structure without the `vibeval simulate` call.
 
-#### 3d. Generate Internal Step Capture (optional)
+#### 4d. Generate Internal Step Capture (optional)
 
 If the design specifies `trace_steps` for multi-turn tests, generate bot wrapper functions that capture internal processing steps. The wrapper manages a shared `turn_traces` list:
 
@@ -187,9 +256,39 @@ def make_tracked_bot(bot, collector):
 
 This wrapper is called between `begin_turn` and `end_turn`, so steps are automatically associated with the current turn.
 
-### 4. Verify Protocol Compliance
+### 5. Review Design–Implementation Consistency
 
-Before writing files, verify all generated artifacts against the protocol references:
+After generating all artifacts (datasets + test code), review them together to catch issues that are invisible when looking at the design or implementation in isolation. This step iterates until no new issues are found.
+
+#### 5a. Cross-Validation
+
+For each rule-type judge_spec, trace the `field` reference (e.g. `outputs.content`) into the generated test code and check:
+
+- **Type match**: does the value assigned to that field in the test code match what the rule expects? For example, `length_between` expects a single string, not a concatenation of all turns.
+- **Semantic match**: does the value represent what the designer intended? If the design says "single reply length ≤ 200 chars" but the implementation assigns a multi-turn concatenation to `outputs.content`, the rule will evaluate the wrong thing.
+- **Multi-turn attention**: for multi-turn tests, pay special attention to how `collector.outputs` fields are assembled — concatenation, last-turn-only, or per-turn list — and verify this matches the judge_spec's assumptions.
+
+#### 5b. Coverage Check
+
+For each judge_spec defined at the **dataset level** (applies to all items):
+
+- Enumerate every item in that dataset.
+- For each item, determine whether the spec's expected behavior is correct. For example, a `tool_called: generate_image` spec is wrong for an item whose intent is to reject image requests.
+- If a dataset-level spec conflicts with any item's expected behavior, move it to per-item `_judge_specs` with appropriate per-item values, or split into separate specs.
+
+#### 5c. Iterate
+
+If either check above finds issues:
+
+1. Fix the problem — this may involve modifying the design file (`design.yaml`), the generated datasets (manifest, data items), or the generated test code.
+2. Re-run both checks (5a and 5b) on the updated artifacts.
+3. Repeat until a full pass produces no new issues.
+
+Report all issues found and fixes applied to the user before proceeding.
+
+### 6. Verify Protocol Compliance
+
+Before finalizing, verify all generated artifacts against the protocol references:
 - Judge specs: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md` (methods, scoring, required fields)
 - Result format: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md` (trace structure, file naming)
 - Dataset format: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md` (manifest, data items)
@@ -221,4 +320,6 @@ After generation, inform the user:
 
 3. For multi-turn: ensure `vibeval` CLI is installed and accessible in PATH
 
-4. Remind: review datasets and judge_specs before running
+4. Mention that design–implementation consistency has been reviewed (Step 5) and list any issues that were found and fixed
+
+5. LLM provider: confirm which provider is configured and how to switch if needed

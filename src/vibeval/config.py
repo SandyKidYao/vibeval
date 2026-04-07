@@ -10,9 +10,9 @@ import yaml
 
 @dataclass
 class LLMConfig:
-    provider: str = "claude-code"  # "claude-code" | "openai" | "anthropic"
-    model: str = ""                # empty = provider default
-    api_key_env: str = ""          # env var name for API key (not needed for claude-code)
+    provider: str = "claude-code"  # "claude-code" | "command"
+    model: str = ""                # model hint (passed via --model to claude-code)
+    command: str = ""              # custom command for "command" provider
 
 
 @dataclass
@@ -60,7 +60,7 @@ class Config:
                 if llm:
                     config.llm.provider = llm.get("provider", config.llm.provider)
                     config.llm.model = llm.get("model", config.llm.model)
-                    config.llm.api_key_env = llm.get("api_key_env", config.llm.api_key_env)
+                    config.llm.command = llm.get("command", config.llm.command)
                 break
 
         return config
