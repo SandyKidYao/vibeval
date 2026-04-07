@@ -1,102 +1,116 @@
 # vibeval — Vibe Coding Eval
 
-AI 应用的快速评测框架。只需安装 Claude Code，即可完成从代码分析、测试生成到评估的全闭环。
+A fast evaluation framework for AI applications. Install Claude Code and the vibeval CLI to get an end-to-end workflow from code analysis to test generation to evaluation.
 
-## 解决什么问题
+## What Problem Does It Solve
 
-传统软件测试框架无法评估 AI 输出的质量；传统 AI 评测平台依赖数据集构建，跟不上功能迭代速度。vibeval 在两者之间取得平衡：
+Traditional software testing frameworks cannot assess the quality of AI outputs; traditional AI evaluation platforms rely on dataset construction and cannot keep up with the pace of feature iteration. vibeval strikes a balance between the two:
 
-- 通过 VibeCoding 分析你的代码，快速生成合成数据和测试用例
-- 确定性规则 + LLM 语义评判，双重评估
-- 跨版本横评，追踪质量变化
-- 语言无关：生成的测试代码适配你的项目框架，不依赖 vibeval 包
+- Analyze your code via VibeCoding to quickly generate synthetic data and test cases
+- Deterministic rules + LLM semantic judgment for dual-layer evaluation
+- Cross-version comparison to track quality changes over time
+- Language-agnostic: generated test code adapts to your project's framework without depending on the vibeval package
 
-## 前置要求
+## Prerequisites
 
 - [Claude Code](https://claude.ai/code)
 - Python 3.10+
 
-## 安装
+## Installation
 
 ```bash
-# 安装 vibeval CLI
+# Install the vibeval CLI
 pip install vibeval
 
-# 安装 Claude Code 插件（在 Claude Code 中执行）
+# Install the Claude Code plugin (run this inside Claude Code)
 /install-plugin https://github.com/SandyKidYao/vibeval
 ```
 
-## 使用方式
+## Usage
 
-在 Claude Code 中执行，全程不需要离开对话：
+Before first use, verify that the LLM provider is set up correctly:
+
+```bash
+vibeval check
+```
+
+Then run everything inside Claude Code without ever leaving the conversation:
 
 ```
 /vibeval-analyze  →  /vibeval-design  →  /vibeval-generate  →  /vibeval-run
                                                       ↑
-                          代码变更 → /vibeval-update ──────┘
+                      Code changes → /vibeval-update ──────┘
 ```
 
-### 分析代码
+### Analyze Code
 
 ```
 /vibeval-analyze meeting_summary src/services/
 ```
 
-分析源码，识别 AI 调用点、数据流、Mock 点，给出可评估性改进建议。
+Analyze source code to identify AI call sites, data flows, and mock points, and provide suggestions for improving testability.
 
-### 设计测试
+### Design Tests
 
 ```
 /vibeval-design meeting_summary
 ```
 
-设计合成数据规格、评判标准、测试结构。每一步产出可编辑的中间文件，可以 review 和修改。
+Design synthetic data specifications, judging criteria, and test structure. Each step produces editable intermediate files that you can review and modify.
 
-### 生成代码和数据
+### Generate Code and Data
 
 ```
 /vibeval-generate meeting_summary
 ```
 
-生成完整的测试套件（合成数据 + 测试代码），使用你项目的测试框架（pytest/vitest/jest/...）。
+Generate a complete test suite (synthetic data + test code) using your project's test framework (pytest/vitest/jest/...).
 
-### 运行 + 评估
+### Run + Evaluate
 
 ```
 /vibeval-run meeting_summary
 ```
 
-一步完成：执行测试 → 评估 → 诊断分析 → 生成报告。
+All in one step: run tests → evaluate → diagnostic analysis → generate report.
 
-### 代码变更后更新
+### Update After Code Changes
 
 ```
 /vibeval-update meeting_summary
 ```
 
-检测代码变更，增量更新测试套件和数据。
+Detect code changes and incrementally update the test suite and data.
 
-### 跨版本对比
+### Cross-Version Comparison
 
 ```bash
-# 统计对比
+# Statistical comparison
 vibeval diff meeting_summary run_a run_b
 
-# LLM 深度横评
+# LLM deep comparison
 vibeval compare meeting_summary run_a run_b
 ```
 
-### 可视化报告
+### Visual Report
 
 ```bash
 vibeval report meeting_summary latest --open
 ```
 
-生成自包含的 HTML 报告，涵盖测试设计、数据、过程 trace 和评判结果。
+Generate a self-contained HTML report covering test design, data, process traces, and judgment results.
 
-### 更多命令
+### Other Commands
 
 ```bash
+# Show evaluation summary
+vibeval summary meeting_summary latest
+
+# List features and runs
+vibeval features
+vibeval runs meeting_summary
+
+# See all commands
 vibeval --help
 ```
 

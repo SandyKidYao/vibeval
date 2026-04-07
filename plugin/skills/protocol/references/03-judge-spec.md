@@ -1,91 +1,91 @@
 # vibeval Protocol — JudgeSpec
 
-评判方法只有两类：**rule**（确定性规则）和 **llm**（LLM 评判）。
+There are only two types of evaluation methods: **rule** (deterministic rules) and **llm** (LLM evaluation).
 
-## 通用结构
+## Common Structure
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| method | string | 是 | `rule` 或 `llm` |
-| weight | number \| "gate" | 否 | `"gate"` = 不通过则整体失败。默认 1.0 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| method | string | Yes | `rule` or `llm` |
+| weight | number \| "gate" | No | `"gate"` = failure causes overall failure. Default 1.0 |
 
-## method: rule — 规则评判
+## method: rule — Rule-based Evaluation
 
-确定性规则，结果完全可复现。
+Deterministic rules with fully reproducible results.
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| rule | string | 是 | 内置规则名称 |
-| args | object | 否 | 规则参数 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| rule | string | Yes | Built-in rule name |
+| args | object | No | Rule arguments |
 
-### 输出规则
+### Output Rules
 
-| 规则名 | 说明 | 参数 |
-|--------|------|------|
-| `contains` | 包含指定文本 | `field`, `value` |
-| `contains_all` | 包含所有指定文本 | `field`, `values` 或 `values_from` |
-| `contains_any` | 包含任一指定文本 | `field`, `values` |
-| `not_contains` | 不包含指定文本 | `field`, `value` |
-| `equals` | 等于预期值 | `field`, `expected` 或 `expected_from` |
-| `matches` | 匹配正则表达式 | `field`, `pattern` |
-| `is_json` | 是合法 JSON | `field` |
-| `length_between` | 长度在范围内 | `field`, `min`, `max` |
+| Rule Name | Description | Arguments |
+|-----------|-------------|-----------|
+| `contains` | Contains specified text | `field`, `value` |
+| `contains_all` | Contains all specified texts | `field`, `values` or `values_from` |
+| `contains_any` | Contains any specified text | `field`, `values` |
+| `not_contains` | Does not contain specified text | `field`, `value` |
+| `equals` | Equals expected value | `field`, `expected` or `expected_from` |
+| `matches` | Matches regular expression | `field`, `pattern` |
+| `is_json` | Is valid JSON | `field` |
+| `length_between` | Length within range | `field`, `min`, `max` |
 
-### Trace 规则
+### Trace Rules
 
-| 规则名 | 说明 | 参数 |
-|--------|------|------|
-| `tool_sequence` | 工具调用顺序符合预期 | `expected` |
-| `tool_called` | 指定工具被调用过 | `tool_name` |
-| `tool_not_called` | 指定工具未被调用 | `tool_name` |
-| `max_turns` | 轮次数不超过上限 | `max` |
-| `max_steps` | 总 steps 数不超过上限 | `max` |
+| Rule Name | Description | Arguments |
+|-----------|-------------|-----------|
+| `tool_sequence` | Tool call order matches expected | `expected` |
+| `tool_called` | Specified tool was called | `tool_name` |
+| `tool_not_called` | Specified tool was not called | `tool_name` |
+| `max_turns` | Number of turns does not exceed limit | `max` |
+| `max_steps` | Total steps count does not exceed limit | `max` |
 
-### 对话规则
+### Conversation Rules
 
-| 规则名 | 说明 | 参数 |
-|--------|------|------|
-| `conversation_turns` | 对话轮次在范围内 | `min`, `max` |
-| `all_turns_responded` | 每轮 input 都有 output | |
-| `no_role_violation` | bot 未扮演用户角色 | |
+| Rule Name | Description | Arguments |
+|-----------|-------------|-----------|
+| `conversation_turns` | Conversation turns within range | `min`, `max` |
+| `all_turns_responded` | Every input turn has an output | |
+| `no_role_violation` | Bot did not impersonate the user role | |
 
-### 字段引用
+### Field References
 
-- `field` 使用点号路径：`outputs.summary`
-- `values_from` / `expected_from` 引用数据项字段
+- `field` uses dot notation paths: `outputs.summary`
+- `values_from` / `expected_from` reference data item fields
 
-## method: llm — LLM 评判
+## method: llm — LLM Evaluation
 
-### 核心原则
+### Core Principles
 
-1. **输入默认 full** — 完整 trace + inputs + outputs 全量提供给 LLM
-2. **ground truth 自动纳入** — `reference_from` 指向数据项字段
-3. **评分严格二选一** — binary（0/1）或 five-point（1-5）
-4. **锚点和校准必填** — 评分稳定性的根基
+1. **Full input by default** — Complete trace + inputs + outputs are provided to the LLM
+2. **Ground truth automatically included** — `reference_from` points to a data item field
+3. **Scoring is strictly one of two modes** — binary (0/1) or five-point (1-5)
+4. **Anchors and calibrations are required** — The foundation for scoring stability
 
-### Binary（0/1 制）
+### Binary (0/1)
 
 ```json
 {
   "method": "llm",
   "scoring": "binary",
   "criteria": "summary does not fabricate information",
-  "test_intent": "检验 AI 是否会将会议中的争议描述为共识",
-  "trap_design": "Alice 提出将截止日期改到周五，Bob 明确反对并建议下周一。陷阱：AI 可能忽略反对意见，输出'大家同意了周五'",
+  "test_intent": "Test whether the AI will describe a disputed point in a meeting as consensus",
+  "trap_design": "Alice proposed changing the deadline to Friday, Bob explicitly objected and suggested next Monday. Trap: The AI may ignore the objection and output 'everyone agreed to Friday'",
   "anchors": {
-    "0": "采用了 Alice 最初的周五方案，忽略了 Bob 的反对或将争议描述为共识",
-    "1": "正确反映了 Alice 和 Bob 的不同意见，或以最终结论（下周一）为准"
+    "0": "Adopted Alice's initial Friday proposal, ignoring Bob's objection or describing the dispute as consensus",
+    "1": "Correctly reflected Alice and Bob's differing opinions, or used the final conclusion (next Monday) as the basis"
   },
   "calibrations": [
-    {"output": "团队同意将截止日期改到周五。", "score": 0, "reason": "将争议描述为共识，Bob 的反对被完全忽略"},
-    {"output": "Alice 提议改到周五，但 Bob 反对并建议下周一。", "score": 1, "reason": "准确反映了双方立场"}
+    {"output": "The team agreed to change the deadline to Friday.", "score": 0, "reason": "Described the dispute as consensus, Bob's objection was completely ignored"},
+    {"output": "Alice proposed changing to Friday, but Bob objected and suggested next Monday.", "score": 1, "reason": "Accurately reflected both positions"}
   ]
 }
 ```
 
-统计指标：**通过率**
+Statistical metric: **pass rate**
 
-### Five-point（5 分制）
+### Five-point (1-5)
 
 ```json
 {
@@ -107,13 +107,13 @@
 }
 ```
 
-不设通过阈值。统计指标：**分数分布**
+No pass threshold is set. Statistical metric: **score distribution**
 
-### 评判目标（target）
+### Evaluation Target (target)
 
-默认情况下 LLM 评判接收完整的 trace + inputs + outputs。通过 `target` 字段可以聚焦到特定范围，让评判 LLM 专注审查特定的过程片段，而非面对整个上下文：
+By default, the LLM judge receives the complete trace + inputs + outputs. The `target` field allows focusing on a specific scope, letting the judging LLM concentrate on reviewing specific process segments rather than facing the entire context:
 
-**评判最终输出（默认）：**
+**Evaluate final output (default):**
 ```json
 {
   "method": "llm",
@@ -122,59 +122,59 @@
 }
 ```
 
-**评判特定轮次范围：**
+**Evaluate a specific turn range:**
 ```json
 {
   "method": "llm",
   "target": {"turns": [1, 3]},
-  "criteria": "前 3 轮 bot 是否正确理解了用户的核心诉求",
-  "test_intent": "验证 bot 在对话早期的理解能力",
-  "anchors": {"0": "误解了用户意图", "1": "准确把握了核心诉求"}
+  "criteria": "In the first 3 turns, did the bot correctly understand the user's core request",
+  "test_intent": "Verify the bot's comprehension ability in early conversation",
+  "anchors": {"0": "Misunderstood the user's intent", "1": "Accurately grasped the core request"}
 }
 ```
 
-**评判特定类型的 step：**
+**Evaluate a specific step type:**
 ```json
 {
   "method": "llm",
   "target": {"step_type": "tool_call"},
-  "criteria": "所有工具选择是否合理，是否有冗余或遗漏",
-  "test_intent": "验证 Agent 的工具选择决策",
-  "trap_design": "场景中有两个功能相似的工具，只有一个能返回完整信息"
+  "criteria": "Whether all tool selections are reasonable, with no redundancy or omissions",
+  "test_intent": "Verify the Agent's tool selection decisions",
+  "trap_design": "The scenario has two functionally similar tools, but only one returns complete information"
 }
 ```
 
-**评判特定轮次中的特定 step 类型：**
+**Evaluate a specific step type within specific turns:**
 ```json
 {
   "method": "llm",
   "target": {"turns": [2, 2], "step_type": "llm_call"},
-  "criteria": "第 2 轮的 LLM 调用是否正确包含了第 1 轮的关键上下文"
+  "criteria": "Whether the LLM call in turn 2 correctly includes the key context from turn 1"
 }
 ```
 
-target 取值：
+Target values:
 
-| 值 | 含义 | 送入 LLM 的数据 |
-|---|------|----------------|
-| `"output"` 或省略 | 评判最终输出（默认） | 完整 trace + inputs + outputs |
-| `{"turns": [start, end]}` | 评判指定轮次范围 | 该范围内的 turns + 对应 inputs/outputs |
-| `{"step_type": "..."}` | 评判特定类型的 step | 所有 turns 中该类型的 steps |
-| `{"turns": [...], "step_type": "..."}` | 组合过滤 | 指定轮次内指定类型的 steps |
+| Value | Meaning | Data sent to LLM |
+|-------|---------|-------------------|
+| `"output"` or omitted | Evaluate final output (default) | Complete trace + inputs + outputs |
+| `{"turns": [start, end]}` | Evaluate specified turn range | Turns within that range + corresponding inputs/outputs |
+| `{"step_type": "..."}` | Evaluate specific step type | Steps of that type across all turns |
+| `{"turns": [...], "step_type": "..."}` | Combined filter | Steps of the specified type within the specified turns |
 
-### 字段汇总
+### Field Summary
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| scoring | string | 是 | `"binary"` 或 `"five-point"` |
-| criteria | string | 是 | 评判标准 |
-| test_intent | string | 是 | 出题意图——考察被测 AI 的什么能力或弱点 |
-| trap_design | string | 否 | 陷阱设计——数据中故意设置的干扰项 |
-| target | string \| object | 否 | 评判目标范围。默认 `"output"`（完整上下文） |
-| anchors | object | 是 | 各分值的锚点描述 |
-| calibrations | list | 是 | 校准样本 |
-| reference_from | string | 否 | 引用数据项字段作为 ground truth |
-| model | string | 否 | 指定评判模型 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| scoring | string | Yes | `"binary"` or `"five-point"` |
+| criteria | string | Yes | Evaluation criteria |
+| test_intent | string | Yes | Test intent — what capability or weakness of the tested AI is being evaluated |
+| trap_design | string | No | Trap design — deliberate distractors embedded in the data |
+| target | string \| object | No | Evaluation target scope. Default `"output"` (full context) |
+| anchors | object | Yes | Anchor descriptions for each score value |
+| calibrations | list | Yes | Calibration samples |
+| reference_from | string | No | Reference a data item field as ground truth |
+| model | string | No | Specify the evaluation model |
 
-`test_intent` 和 `trap_design` 是信息不对称原则的核心体现（见 `00-philosophy.md`）。
-`target` 是全局视野原则的核心体现——允许对过程做逐步、分段的细粒度审查。
+`test_intent` and `trap_design` are the core embodiment of the information asymmetry principle (see `00-philosophy.md`).
+`target` is the core embodiment of the global visibility principle — enabling step-by-step, segmented, fine-grained process auditing.

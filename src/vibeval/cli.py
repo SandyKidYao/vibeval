@@ -80,6 +80,13 @@ def main() -> None:
     p_report.add_argument("--open", action="store_true",
         help="Open the report in the default browser after generation")
 
+    # --- Environment ---
+    sub.add_parser("check",
+        help="Verify that the LLM provider (Claude Code CLI) is installed, authenticated, and working",
+        description="Send a test prompt to Claude Code CLI to verify the full chain: "
+                    "installation, authentication, and API access. "
+                    "If using a custom LLM command, verify that it is configured and executable.")
+
     # --- Discovery ---
     sub.add_parser("features", help="List all feature directories under tests/vibeval/")
 
@@ -94,7 +101,9 @@ def main() -> None:
 
     config = Config.load(args.project)
 
-    if args.command == "simulate":
+    if args.command == "check":
+        cmd_check(config)
+    elif args.command == "simulate":
         cmd_simulate(args.persona, args.history, config)
     elif args.command == "judge":
         cmd_judge(args.feature, args.run_id, config)
@@ -110,6 +119,37 @@ def main() -> None:
         cmd_report(args.feature, args.run_id, config, args.output, getattr(args, 'open', False))
     elif args.command == "features":
         cmd_features(config)
+
+
+def cmd_check(config: Config) -> None:
+    """Verify that the configured LLM provider is working."""
+    provider = config.llm.provider
+    print(f"LLM provider: {provider}")
+
+    if provider == "claude-code":
+        from .llm import check_claude_code
+        try:
+            check_claude_code()
+            print("Claude Code CLI is installed, authenticated, and working.")
+        except RuntimeError as e:
+            print(f"\n{e}")
+            sys.exit(1)
+    elif provider == "command":
+        cmd = config.llm.command
+        if not cmd:
+            print("Error: provider is 'command' but no command is configured in .vibeval.yml")
+            sys.exit(1)
+        print(f"Custom command: {cmd}")
+        from .llm import _call_custom_command
+        try:
+            resp = _call_custom_command("hello", config.llm)
+            print(f"Custom LLM responded successfully ({len(resp)} chars).")
+        except RuntimeError as e:
+            print(f"\nCustom command failed: {e}")
+            sys.exit(1)
+    else:
+        print(f"Error: unknown provider '{provider}'")
+        sys.exit(1)
 
 
 def cmd_simulate(persona_path: str, history_path: str | None, config: Config) -> None:

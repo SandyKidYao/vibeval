@@ -1,143 +1,143 @@
-# vibeval 评测哲学 — LLM Judge 的有效性原则
+# vibeval Evaluation Philosophy — Principles for Effective LLM Judging
 
-## 自证矛盾
+## The Self-Proving Paradox
 
-LLM-as-Judge 面临的根本矛盾：评判的 LLM 可能不比被评判的 AI 更强。只懂小学数学的人无法判断微积分结果的对错。如果评判者和被评判者信息对等、能力对等，评判就可能失真。
+The fundamental contradiction of LLM-as-Judge: the judging LLM may not be stronger than the AI being judged. A person who only understands elementary math cannot determine whether a calculus result is correct. If the judge and the subject have equal information and equal capability, the judgment may be unreliable.
 
-vibeval 不追求让评判 LLM"更聪明"——它通过**信息不对称**和**全局视野**两个结构性优势来解决这个问题。
+vibeval does not try to make the judging LLM "smarter" — it solves this problem through two structural advantages: **information asymmetry** and **global perspective**.
 
-## 原则一：信息不对称 — 出题者优势
+## Principle 1: Information Asymmetry — The Test Designer's Advantage
 
-vibeval 既是出题者也是评判者。出题者天然拥有被测者不具备的信息：
+vibeval is both the test designer and the judge. The test designer naturally possesses information that the subject under test does not have:
 
-- **出题意图**：这道题要考察什么？陷阱在哪里？
-- **预期行为**：面对这个输入，正确的系统应该做什么？
-- **参考答案**：期望的输出是什么样的（即使无法精确定义）？
-- **陷阱设计**：数据中故意埋入的干扰项、边界条件、误导信息
+- **Test intent**: What is this test case designed to evaluate? Where are the traps?
+- **Expected behavior**: Given this input, what should a correct system do?
+- **Reference answer**: What should the expected output look like (even if it cannot be precisely defined)?
+- **Trap design**: Distractors, edge cases, and misleading information deliberately embedded in the data
 
-**设计原则：**
+**Design Principles:**
 
-1. **每个数据项都要有出题思路**
+1. **Every data item must have a clear test rationale**
 
-   不是随便生成一段输入然后看 AI 怎么回答，而是精心设计：这个输入要考察什么能力？AI 可能在哪里犯错？
-
-   ```yaml
-   # 差的设计 — 没有明确考察点
-   text: "一段普通的会议记录"
-   
-   # 好的设计 — 有明确的陷阱和考察点
-   text: "一段包含相互矛盾的时间信息的会议记录"
-   # 考察点：AI 是否能识别矛盾，而不是随机选择一个
-   # 陷阱：Alice 说截止日期是周五，但 Bob 后来更正为下周一
-   ```
-
-2. **judge_specs 中的 anchors 和 calibrations 要包含出题者的"内幕知识"**
-
-   不是泛泛地说"输出应该准确"，而是基于数据的具体设计来定义：
+   Rather than randomly generating input and seeing how the AI responds, design deliberately: What capability does this input test? Where might the AI make mistakes?
 
    ```yaml
-   # 差的 anchors — 评判 LLM 没有比被测 AI 更多的信息
-   anchors:
-     "0": "输出不准确"
-     "1": "输出准确"
+   # Poor design — no clear evaluation focus
+   text: "An ordinary meeting transcript"
    
-   # 好的 anchors — 评判 LLM 知道"准确"在这个具体场景下意味着什么
-   anchors:
-     "0": "采用了 Alice 最初说的周五截止日期，忽略了 Bob 的更正"
-     "1": "正确识别出最终截止日期是下周一（Bob 的更正），或者明确指出存在矛盾"
+   # Good design — clear traps and evaluation focus
+   text: "A meeting transcript containing contradictory time information"
+   # Evaluation focus: Can the AI identify the contradiction rather than randomly picking one?
+   # Trap: Alice says the deadline is Friday, but Bob later corrects it to next Monday
    ```
 
-3. **calibrations 要展示出题者对"好坏"的判断标准**
+2. **anchors and calibrations in judge_specs must contain the test designer's "insider knowledge"**
 
-   calibrations 不是随便举例，而是用出题者的视角告诉评判 LLM"在这类题目中，什么样的表现算好，什么样算差"：
+   Rather than vaguely stating "the output should be accurate," define criteria based on the specific data design:
+
+   ```yaml
+   # Poor anchors — the judging LLM has no more information than the AI under test
+   anchors:
+     "0": "Output is inaccurate"
+     "1": "Output is accurate"
+   
+   # Good anchors — the judging LLM knows what "accurate" means in this specific scenario
+   anchors:
+     "0": "Adopted Alice's initial Friday deadline, ignored Bob's correction"
+     "1": "Correctly identified the final deadline as next Monday (Bob's correction), or explicitly noted the contradiction"
+   ```
+
+3. **calibrations must demonstrate the test designer's standards for "good" and "bad"**
+
+   Calibrations are not arbitrary examples; they use the test designer's perspective to tell the judging LLM "in this type of test, what constitutes good performance and what constitutes poor performance":
 
    ```yaml
    calibrations:
-     - output: "截止日期是周五"
+     - output: "The deadline is Friday"
        score: 0
-       reason: "被表面信息误导，未识别后续更正"
-     - output: "截止日期存在争议：Alice 提出周五，但 Bob 更正为下周一"
+       reason: "Misled by surface information, failed to identify the subsequent correction"
+     - output: "The deadline is disputed: Alice proposed Friday, but Bob corrected it to next Monday"
        score: 1
-       reason: "识别了矛盾并给出了完整信息"
+       reason: "Identified the contradiction and provided complete information"
    ```
 
-4. **出题信息对被测者不可见**
+4. **Test design information is invisible to the subject under test**
 
-   judge_specs、anchors、calibrations、考察意图这些信息存在于 dataset 的 manifest 中，被测 AI 永远看不到它们。被测 AI 只接收 input，而评判 LLM 接收 input + output + trace + 所有出题信息。
+   judge_specs, anchors, calibrations, and test intent all reside in the dataset manifest and are never visible to the AI under test. The AI under test only receives the input, while the judging LLM receives input + output + trace + all test design information.
 
-## 原则二：全局视野 — 过程审查优势
+## Principle 2: Global Perspective — Process Review Advantage
 
-被测 AI 在处理任务时，受限于上下文窗口和注意力衰减——长对话后期会遗忘早期信息，复杂工作流中会丢失关键上下文。
+The AI under test is constrained by context window limits and attention decay when processing tasks — it forgets earlier information late in long conversations and loses critical context in complex workflows.
 
-vibeval 的评判 LLM 不受此限制，因为它在事后拿到的是**结构化的过程记录（trace）**：
+vibeval's judging LLM is not subject to these limitations because it receives **structured process records (traces)** after the fact:
 
-- 完整的 turn 序列，每轮的 input/steps/output 结构清晰
-- 每个内部步骤（LLM 调用、工具调用、上下文变更）都有独立记录
-- 可以针对任意步骤单独审查，不需要一次性处理整个上下文
+- Complete turn sequences with clear input/steps/output structure for each turn
+- Independent records for each internal step (LLM calls, tool calls, context changes)
+- Ability to review any step individually without processing the entire context at once
 
-**设计原则：**
+**Design Principles:**
 
-5. **trace 采集要覆盖关键决策点**
+5. **Trace collection must cover key decision points**
 
-   不是只采集最终输出，而是采集 AI 做出关键决策的每一步。评判 LLM 可以逐步审查这些决策：
+   Rather than collecting only the final output, capture every step where the AI makes a key decision. The judging LLM can then review these decisions step by step:
 
-   - 工具选择是否正确？为什么选了这个工具而不是那个？
-   - 上下文组装是否遗漏了关键信息？
-   - 多步推理中是否在某一步出现了偏差？
+   - Was the tool selection correct? Why was this tool chosen over another?
+   - Did context assembly miss critical information?
+   - Did a deviation occur at some step in multi-step reasoning?
 
-6. **judge_specs 应该同时评估结果和过程**
+6. **judge_specs should evaluate both results and process**
 
-   只评估最终输出是不够的——一个"看起来正确"的输出可能是通过错误的过程碰巧得到的。结合过程评估：
+   Evaluating only the final output is insufficient — an output that "looks correct" may have been reached through a flawed process by chance. Combine process evaluation:
 
    ```yaml
    judge_specs:
-     # 结果评估
+     # Result evaluation
      - method: llm
        scoring: binary
-       criteria: "最终输出正确识别了截止日期的矛盾"
+       criteria: "The final output correctly identifies the deadline contradiction"
        anchors: { ... }
        calibrations: [ ... ]
    
-     # 过程评估
+     # Process evaluation
      - method: rule
        rule: tool_called
        args: { tool_name: "check_calendar" }
    
      - method: llm
        scoring: binary
-       criteria: "在处理过程中，AI 注意到了 Bob 对 Alice 的更正，而不是只处理了第一个提到的日期"
+       criteria: "During processing, the AI noticed Bob's correction to Alice's statement, rather than only processing the first mentioned date"
        anchors:
-         "0": "trace 显示 AI 仅使用了 Alice 的信息构建回复，未引用 Bob 的更正"
-         "1": "trace 显示 AI 在处理中引用了 Bob 的更正信息"
+         "0": "Trace shows the AI only used Alice's information to construct the response, without referencing Bob's correction"
+         "1": "Trace shows the AI referenced Bob's correction during processing"
        calibrations: [ ... ]
    ```
 
-7. **长对话/复杂流程要分段评估**
+7. **Long conversations/complex workflows should be evaluated in segments**
 
-   对于多轮对话或复杂工作流，不要指望一个 judge_spec 评估整个过程。应该拆分为多个维度，每个维度聚焦于过程中的一个方面：
+   For multi-turn conversations or complex workflows, do not expect a single judge_spec to evaluate the entire process. Split into multiple dimensions, each focusing on one aspect of the process:
 
    ```yaml
-   # 拆分评估，而不是"整体打个分"
-   - criteria: "前 3 轮对话中，bot 是否正确理解了用户的核心诉求"
-   - criteria: "在用户表达负面情绪时，bot 是否避免了轻视或否定"
-   - criteria: "bot 的工具调用顺序是否合理"
+   # Segmented evaluation, rather than "give an overall score"
+   - criteria: "In the first 3 turns of conversation, did the bot correctly understand the user's core request"
+   - criteria: "When the user expressed negative emotions, did the bot avoid being dismissive or negating"
+   - criteria: "Was the bot's tool call sequence reasonable"
    ```
 
-## 总结：vibeval 的两个结构性优势
+## Summary: vibeval's Two Structural Advantages
 
 ```
-被测 AI 只有:             vibeval 评判拥有:
-  - input                  - input（相同）
-  - 自身能力               - output（被测 AI 的完整输出）
-                           - trace（逐步过程记录）
-                           - 出题意图（为什么出这道题）
-                           - 陷阱设计（数据中的考察点）
-                           - 预期行为（应该怎么做）
-                           - 参考答案（ground truth）
-                           - anchors（具体的好坏标准）
-                           - calibrations（打分校准）
+AI under test has only:     vibeval judge has:
+  - input                    - input (same)
+  - its own capabilities     - output (complete output of the AI under test)
+                             - trace (step-by-step process records)
+                             - test intent (why this test was designed)
+                             - trap design (evaluation focus in the data)
+                             - expected behavior (what should be done)
+                             - reference answer (ground truth)
+                             - anchors (specific criteria for good/bad)
+                             - calibrations (scoring calibration)
 ```
 
-这种信息不对称确保评判 LLM 在判断特定测试场景时，始终比被测 AI 拥有更多的上下文。不是因为评判 LLM 更聪明，而是因为它知道更多。
+This information asymmetry ensures that the judging LLM always has more context than the AI under test when evaluating specific test scenarios. Not because the judging LLM is smarter, but because it knows more.
 
-vibeval 的所有命令（/vibeval-analyze, /vibeval-design, /vibeval-generate）在生成测试数据和评判标准时，都必须遵循这两个原则。
+All vibeval commands (/vibeval-analyze, /vibeval-design, /vibeval-generate) must follow these two principles when generating test data and evaluation criteria.

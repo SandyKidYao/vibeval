@@ -1,95 +1,99 @@
-# vibeval 项目开发指南
+# vibeval Project Development Guide
 
-## 项目概述
+## Project Overview
 
-vibeval (Vibe Coding Eval) 是一个 AI 应用评测框架，由两部分组成：
-- **vibeval CLI** (`src/vibeval/`) — 评测工具（judge、compare、simulate、report 等）
-- **Claude Code Plugin** (`plugin/`) — VibeCoding 工作流（analyze、design、generate、run、update）
+vibeval (Vibe Coding Eval) is an AI application evaluation framework consisting of two parts:
+- **vibeval CLI** (`src/vibeval/`) — Evaluation tools (judge, compare, simulate, diff, report, check, etc.)
+- **Claude Code Plugin** (`plugin/`) — VibeCoding workflow (analyze, design, generate, run, update)
 
-## 核心原则
+## Core Principles
 
-### 1. 协议为本
+### 1. Protocol First
 
-`plugin/skills/protocol/references/` 下的协议文档是整个项目的核心设定（Source of Truth）。所有 plugin 命令、CLI 代码、文档都必须围绕和遵循协议。当任何地方的内容与协议矛盾时，以协议为准。编写文档或命令时，避免重复协议中已有的定义，改为引用协议文件。
+The protocol documents under `plugin/skills/protocol/references/` are the project's Source of Truth. All plugin commands, CLI code, and documentation must follow and adhere to the protocol. When any content conflicts with the protocol, the protocol takes precedence. When writing documentation or commands, avoid duplicating definitions already present in the protocol; reference the protocol files instead.
 
-协议文件：
-- `00-philosophy.md` — 评测哲学（信息不对称 + 全局视野）
-- `01-overview.md` — 目录结构、统一 turn 模型
-- `02-dataset.md` — 数据集格式
-- `03-judge-spec.md` — 评判规格（rule/llm、target、所有字段定义）
-- `04-result.md` — 结果格式（trace turns/steps）
-- `05-comparison.md` — 横评格式
+Protocol files:
+- `00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective)
+- `01-overview.md` — Directory structure, unified turn model
+- `02-dataset.md` — Dataset format
+- `03-judge-spec.md` — Judge specification (rule/llm, target, all field definitions)
+- `04-result.md` — Result format (trace turns/steps)
+- `05-comparison.md` — Comparison format
 
-### 2. 语言无关
+### 2. Language Agnostic
 
-所有设计必须避免语言耦合。vibeval CLI 提供通用的、可通过命令行直接执行的功能，不需要在代码层面做依赖。用户的测试代码不 import vibeval 包，而是通过 subprocess 调用 CLI（如 `vibeval simulate`），或直接按协议格式生成文件。CLI 既服务开发者，也服务 VibeCoding Agent。
+All designs must avoid language coupling. vibeval CLI provides generic functionality that can be executed directly from the command line, without requiring code-level dependencies. User test code does not import the vibeval package; instead, it invokes the CLI via subprocess (e.g., `vibeval simulate`) or generates files directly in the protocol format. The CLI serves both developers and VibeCoding Agents.
 
-### 3. CLI Help 是命令文档的唯一来源
+### 3. CLI Help Is the Single Source of Truth for Command Documentation
 
-CLI 的每个命令必须保持完整、最新的 `--help` 描述（包括用途、参数说明、使用示例）。Plugin 的命令文档和 SKILL.md 中不重复 CLI 的参数细节，而是提示通过 `vibeval --help` / `vibeval <command> --help` 查看。这样 CLI 和文档永远不会不同步。
+Every CLI command must maintain a complete, up-to-date `--help` description (including purpose, parameter descriptions, and usage examples). Plugin command documentation and SKILL.md should not duplicate CLI parameter details; instead, they should direct users to check via `vibeval --help` / `vibeval <command> --help`. This ensures the CLI and documentation never fall out of sync.
 
-### 4. 测试目录的区分
+### 4. Separating Test Directories
 
-`tests/` 目录下是 vibeval CLI 工具和代码自身的单元测试、集成测试。`examples/` 下的项目（如 `meeting_app/`）是独立的示例应用，它们有自己的测试（在 `examples/meeting_app/tests/vibeval/` 下），演示的是用户使用 vibeval 的完整流程。两者不要混淆。
+The `tests/` directory contains unit tests and integration tests for the vibeval CLI tools and code itself. Projects under `examples/` (such as `meeting_app/`) are standalone example applications with their own tests (under `examples/meeting_app/tests/vibeval/`), demonstrating the complete workflow of using vibeval. Do not confuse the two.
 
-## 开发约定
+### 5. English as Primary Language
 
-### 运行测试
+All code, documentation, commit messages, comments, and CLI output in this project must be written in English.
+
+## Development Conventions
+
+### Running Tests
 
 ```bash
-# vibeval 自身的测试
+# vibeval's own tests
 python -m pytest tests/ -v
 
-# 示例应用的测试（独立运行）
+# Example application tests (run independently)
 cd examples/meeting_app/tests/vibeval/meeting_summary/tests
 python -m pytest test_summarizer.py -v
 
-# 示例应用的 judge
+# Example application judge
 cd examples/meeting_app
 vibeval judge meeting_summary latest
 ```
 
-### 修改协议
+### Modifying the Protocol
 
-修改协议文件后，检查以下是否需要同步更新：
-- `src/vibeval/` 中的代码实现（rules.py、llm.py、judge.py、compare.py、result.py）
-- `plugin/commands/` 中的命令文档（应引用协议而非重复内容）
-- `plugin/skills/protocol/SKILL.md`（Quick Reference 摘要）
-- CLI 的 `--help` 描述
+After modifying protocol files, check whether the following need to be updated accordingly:
+- Code implementation in `src/vibeval/` (rules.py, llm.py, judge.py, compare.py, result.py)
+- Command documentation in `plugin/commands/` (should reference the protocol rather than duplicate content)
+- `plugin/skills/protocol/SKILL.md` (Quick Reference summary)
+- CLI `--help` descriptions
 
-### 修改 CLI
+### Modifying the CLI
 
-新增或修改 CLI 命令时：
-- 在 `cli.py` 中提供完整的 `help` 和 `description` 文本
-- 不需要同步更新 plugin 文档中的命令细节——plugin 文档应引导查看 `vibeval --help`
-- 添加对应的测试到 `tests/`
+When adding or modifying CLI commands:
+- Provide complete `help` and `description` text in `cli.py`
+- No need to update command details in plugin documentation — plugin documentation should direct users to check `vibeval --help`
+- Add corresponding tests to `tests/`
 
-### 版本管理
+### Version Management
 
-项目版本在三处维护，必须保持一致：
-- `pyproject.toml` — `version` 字段
-- `plugin/.claude-plugin/plugin.json` — `version` 字段
-- `src/vibeval/__init__.py` — `__version__` 变量
+The project version is maintained in three places and must be kept consistent:
+- `pyproject.toml` — `version` field
+- `plugin/plugin.json` — `version` field
+- `src/vibeval/__init__.py` — `__version__` variable
 
-发版或变更版本号时，三处同时更新。
+When releasing or changing the version number, update all three places simultaneously.
 
-### 修改 Plugin
+### Modifying the Plugin
 
-修改 plugin 命令或 skill 时：
-- 基础概念定义（数据格式、字段、规则名等）一律引用 `references/` 中的协议文件，不内联重复
-- 操作指导（如何设计、如何生成）可以在命令文档中展开，但引用协议作为定义来源
-- CLI 命令的参数和用法，引导使用 `vibeval --help` 查看
+When modifying plugin commands or skills:
+- Core concept definitions (data formats, fields, rule names, etc.) must always reference the protocol files in `references/`; do not duplicate them inline
+- Operational guidance (how to design, how to generate) can be elaborated in command documentation, but should reference the protocol as the source of definitions
+- For CLI command parameters and usage, direct users to check `vibeval --help`
 
-### 项目结构
+### Project Structure
 
 ```
 vibeval/
-├── src/vibeval/            # CLI 工具实现
-├── plugin/                # Claude Code 插件
+├── src/vibeval/            # CLI tool implementation
+├── plugin/                # Claude Code plugin
 │   ├── commands/           # /vibeval-analyze, /vibeval-design, /vibeval-generate, /vibeval-run, /vibeval-update
-│   └── skills/protocol/    # 数据协议（Source of Truth）
-├── examples/              # 独立的示例应用
-├── tests/                 # vibeval 自身的测试
+│   └── skills/protocol/    # Data protocol (Source of Truth)
+├── examples/              # Standalone example applications
+├── tests/                 # vibeval's own tests
 ├── CLAUDE.md
 ├── README.md
 └── pyproject.toml

@@ -19,9 +19,9 @@ Read the design file and vibeval protocol references before generating. In parti
 
 Before generating, ask the user which LLM provider to use for evaluation (judge and simulate):
 
-> vibeval 的评估和用户模拟需要调用 LLM。你想使用哪种方式？
-> 1. **默认（Claude Code）** — 使用已安装的 Claude Code CLI
-> 2. **自定义 LLM** — 编写一个自定义脚本来接入你自己的 LLM
+> vibeval's evaluation and user simulation require calling an LLM. Which option would you like to use?
+> 1. **Default (Claude Code)** — Use the installed Claude Code CLI
+> 2. **Custom LLM** — Write a custom script to connect to your own LLM
 
 #### If the user chooses default (Claude Code)
 

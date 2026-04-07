@@ -1,8 +1,8 @@
-# vibeval Protocol — Comparison (横评)
+# vibeval Protocol — Comparison
 
-横评结果独立存储，不影响各 run 的独立评估。
+Comparison results are stored independently and do not affect the standalone evaluation of each run.
 
-## 目录结构
+## Directory Structure
 
 ```
 tests/vibeval/{feature}/
@@ -44,12 +44,12 @@ tests/vibeval/{feature}/
 }
 ```
 
-## 消除位置偏差
+## Eliminating Position Bias
 
-每次对比做两轮评估，交换 A/B 顺序：
-- 两轮一致 → `confidence: "consistent"`
-- 两轮矛盾 → `winner: "inconclusive"`, `confidence: "inconsistent"`
+Each comparison performs two rounds of evaluation with swapped A/B order:
+- Both rounds agree → `confidence: "consistent"`
+- Both rounds disagree → `winner: "inconclusive"`, `confidence: "inconsistent"`
 
-## 横评范围
+## Comparison Scope
 
-横评只对 LLM judge_specs 执行（rule 是确定性的，比较无意义）。
+Comparisons are only performed for LLM judge_specs (rules are deterministic, so comparison is meaningless).

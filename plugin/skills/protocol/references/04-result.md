@@ -1,6 +1,6 @@
 # vibeval Protocol — Result & Trace
 
-## 目录结构
+## Directory Structure
 
 ```
 tests/vibeval/{feature}/
@@ -28,7 +28,7 @@ tests/vibeval/{feature}/
     "turns": [
       {
         "turn": 1,
-        "input": {"content": "总结这个会议"},
+        "input": {"content": "Summarize this meeting"},
         "steps": [
           {"type": "tool_call",   "data": {"name": "fetch_transcript", "args": {"id": "123"}}},
           {"type": "tool_result", "data": {"name": "fetch_transcript", "result": "Alice: ..."}},
@@ -47,63 +47,63 @@ tests/vibeval/{feature}/
 }
 ```
 
-多轮 TestResult 结构完全相同，只是 turns 数组有多个元素。
+Multi-turn TestResult has the exact same structure, with multiple elements in the turns array.
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| test_name | string | 是 | 测试用例名称 |
-| dataset | string | 否 | 关联的数据集名称 |
-| item_id | string | 否 | 关联的数据项 ID |
-| judge_results | list[JudgeResult] | 是 | 评估结果列表 |
-| trace | Trace | 否 | 过程记录 |
-| inputs | object | 否 | 测试输入 |
-| outputs | object | 否 | 测试输出 |
-| timestamp | number | 否 | 执行时间 |
-| duration | number | 否 | 耗时（秒） |
-| metadata | object | 否 | 附加信息 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| test_name | string | Yes | Test case name |
+| dataset | string | No | Associated dataset name |
+| item_id | string | No | Associated data item ID |
+| judge_results | list[JudgeResult] | Yes | List of evaluation results |
+| trace | Trace | No | Process record |
+| inputs | object | No | Test inputs |
+| outputs | object | No | Test outputs |
+| timestamp | number | No | Execution time |
+| duration | number | No | Duration (seconds) |
+| metadata | object | No | Additional information |
 
 ## Trace
 
-按轮次组织的过程记录。每轮：input → steps[] → output。
+Process records organized by turn. Each turn: input → steps[] → output.
 
 ### Turn
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| turn | number | 是 | 轮次编号，从 1 开始 |
-| input | object | 是 | 该轮的输入 |
-| steps | list[Step] | 是 | 处理过程（可为空列表） |
-| output | object | 是 | 该轮的输出 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| turn | number | Yes | Turn number, starting from 1 |
+| input | object | Yes | Input for this turn |
+| steps | list[Step] | Yes | Processing steps (may be empty list) |
+| output | object | Yes | Output for this turn |
 
 ### Step
 
-`type` 完全开放，常见值：
+`type` is fully open-ended. Common values:
 
-| type | 含义 | 典型 data |
-|------|------|----------|
-| `llm_call` | 调用 LLM | model, prompt_preview, system |
-| `llm_output` | LLM 返回 | content, thinking, token_count |
-| `tool_call` | 调用工具 | name, args |
-| `tool_result` | 工具返回 | name, result |
-| `handoff` | Agent 交接 | from, to, context |
-| `context_update` | 上下文变更 | added, removed, modified |
-| `retrieval` | RAG 检索 | query, results |
+| type | Meaning | Typical data |
+|------|---------|--------------|
+| `llm_call` | LLM invocation | model, prompt_preview, system |
+| `llm_output` | LLM response | content, thinking, token_count |
+| `tool_call` | Tool invocation | name, args |
+| `tool_result` | Tool response | name, result |
+| `handoff` | Agent handoff | from, to, context |
+| `context_update` | Context change | added, removed, modified |
+| `retrieval` | RAG retrieval | query, results |
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| type | string | 是 | 步骤类型 |
-| data | object | 是 | 步骤数据 |
-| timestamp | number | 否 | 时间戳 |
-| metadata | object | 否 | 附加信息 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| type | string | Yes | Step type |
+| data | object | Yes | Step data |
+| timestamp | number | No | Timestamp |
+| metadata | object | No | Additional information |
 
 ## JudgeResult
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| spec | JudgeSpec | 是 | 使用的评判规格 |
-| score | number | 是 | rule/binary: 0 或 1；five-point: 1-5 |
-| reason | string | 否 | 评估理由 |
-| details | object | 否 | 附加信息 |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| spec | JudgeSpec | Yes | The judge specification used |
+| score | number | Yes | rule/binary: 0 or 1; five-point: 1-5 |
+| reason | string | No | Evaluation rationale |
+| details | object | No | Additional information |
 
 ## RunSummary
 
