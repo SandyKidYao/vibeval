@@ -1,6 +1,6 @@
 {
   "name": "vibeval",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "vibeval (Vibe Coding Eval) — AI application testing workflow for Claude Code",
   "author": {
     "name": "vibeval"
