@@ -14,7 +14,7 @@ LLM-as-Judge works NOT because the judge is smarter, but because vibeval gives i
 1. **Information asymmetry** — The judge knows test intent, trap design, expected behavior. The tested AI only sees input.
 2. **Global process visibility** — The judge reviews structured traces step-by-step, free from context window limits.
 
-**Always consult `references/00-philosophy.md` first when designing tests, data, and judge specs.**
+**Always consult `${CLAUDE_SKILL_DIR}/references/00-philosophy.md` first when designing tests, data, and judge specs.**
 
 ## Quick Reference (Summary)
 
@@ -39,9 +39,9 @@ vibeval <command> --help
 
 All foundational definitions live here. Commands and other docs reference these, not the other way around.
 
-- **`references/00-philosophy.md`** — Evaluation philosophy: information asymmetry, global process visibility. **Read first.**
-- **`references/01-overview.md`** — Directory structure, unified turn model, data flow
-- **`references/02-dataset.md`** — Manifest, data items, persona format, single-file datasets
-- **`references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
-- **`references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
-- **`references/05-comparison.md`** — Pairwise comparison, position bias elimination
+- **`${CLAUDE_SKILL_DIR}/references/00-philosophy.md`** — Evaluation philosophy: information asymmetry, global process visibility. **Read first.**
+- **`${CLAUDE_SKILL_DIR}/references/01-overview.md`** — Directory structure, unified turn model, data flow
+- **`${CLAUDE_SKILL_DIR}/references/02-dataset.md`** — Manifest, data items, persona format, single-file datasets
+- **`${CLAUDE_SKILL_DIR}/references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
+- **`${CLAUDE_SKILL_DIR}/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
+- **`${CLAUDE_SKILL_DIR}/references/05-comparison.md`** — Pairwise comparison, position bias elimination

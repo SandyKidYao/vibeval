@@ -14,8 +14,8 @@ Perform a thorough analysis of the codebase to prepare for vibeval test generati
 Produce analysis artifacts in `tests/vibeval/$1/analysis/`.
 
 Read vibeval protocol references before starting:
-- `references/01-overview.md` — directory structure and unified turn model
-- `references/00-philosophy.md` — evaluation philosophy (informs testability suggestions)
+- `${CLAUDE_SKILL_DIR}/references/01-overview.md` — directory structure and unified turn model
+- `${CLAUDE_SKILL_DIR}/references/00-philosophy.md` — evaluation philosophy (informs testability suggestions)
 
 ## Analysis Steps
 
@@ -31,7 +31,7 @@ For each call point, record: file path, function name, purpose, input/output des
 
 ### 2. Determine Test Mode
 
-All vibeval tests are N-turn interactions; single-turn is N=1 (see `references/01-overview.md` for the unified model).
+All vibeval tests are N-turn interactions; single-turn is N=1 (see `${CLAUDE_SKILL_DIR}/references/01-overview.md` for the unified model).
 
 Classify the pipeline:
 - **Single-turn** (N=1): one input → one output (summarization, classification, extraction, etc.)

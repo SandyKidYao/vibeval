@@ -11,7 +11,7 @@ If `$1` is not provided, list available features under `tests/vibeval/` that hav
 
 The design file must exist at `tests/vibeval/$1/design/`. If not found, instruct the user to run `/vibeval-design $1` first.
 
-Read the design file and vibeval protocol references before generating. In particular, read `references/00-philosophy.md` — the evaluation philosophy governs how synthetic data and judge_specs should be crafted.
+Read the design file and vibeval protocol references before generating. In particular, read `${CLAUDE_SKILL_DIR}/references/00-philosophy.md` — the evaluation philosophy governs how synthetic data and judge_specs should be crafted.
 
 ## Generation Steps
 
@@ -34,9 +34,9 @@ tests/vibeval/{feature}/datasets/{dataset_name}/
 └── {item_id_2}.json
 ```
 
-**manifest.yaml**: name, description, version, tags, judge_specs from design. For format details, consult `references/02-dataset.md`.
+**manifest.yaml**: name, description, version, tags, judge_specs from design. For format details, consult `${CLAUDE_SKILL_DIR}/references/02-dataset.md`.
 
-**Data items**: generate synthetic data applying the information asymmetry principle (see `references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
+**Data items**: generate synthetic data applying the information asymmetry principle (see `${CLAUDE_SKILL_DIR}/references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
 
 ### 3. Generate Test Code
 
@@ -50,7 +50,7 @@ Generate test files in `tests/vibeval/{feature}/tests/` using the user's test fr
 
 #### 3a. Generate VibevalResultCollector (inline helper)
 
-Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `references/04-result.md`.
+Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `${CLAUDE_SKILL_DIR}/references/04-result.md`.
 
 The collector API:
 
@@ -190,9 +190,9 @@ This wrapper is called between `begin_turn` and `end_turn`, so steps are automat
 ### 4. Verify Protocol Compliance
 
 Before writing files, verify all generated artifacts against the protocol references:
-- Judge specs: validate against `references/03-judge-spec.md` (methods, scoring, required fields)
-- Result format: validate against `references/04-result.md` (trace structure, file naming)
-- Dataset format: validate against `references/02-dataset.md` (manifest, data items)
+- Judge specs: validate against `${CLAUDE_SKILL_DIR}/references/03-judge-spec.md` (methods, scoring, required fields)
+- Result format: validate against `${CLAUDE_SKILL_DIR}/references/04-result.md` (trace structure, file naming)
+- Dataset format: validate against `${CLAUDE_SKILL_DIR}/references/02-dataset.md` (manifest, data items)
 - No imports from `vibeval` package in test code
 - Multi-turn tests use `vibeval simulate` CLI (not Python API)
 

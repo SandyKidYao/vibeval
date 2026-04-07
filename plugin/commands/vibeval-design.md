@@ -13,9 +13,9 @@ If `$1` is not provided, list available features under `tests/vibeval/` that hav
 The analysis file must exist at `tests/vibeval/$1/analysis/`. If not found, instruct the user to run `/vibeval-analyze $1` first.
 
 Read the following vibeval protocol references before designing:
-- **`references/00-philosophy.md`** — MUST READ FIRST. The two core principles (information asymmetry + global process visibility) govern all design decisions.
-- **`references/02-dataset.md`** — Dataset format, data items, persona format.
-- **`references/03-judge-spec.md`** — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
+- **`${CLAUDE_SKILL_DIR}/references/00-philosophy.md`** — MUST READ FIRST. The two core principles (information asymmetry + global process visibility) govern all design decisions.
+- **`${CLAUDE_SKILL_DIR}/references/02-dataset.md`** — Dataset format, data items, persona format.
+- **`${CLAUDE_SKILL_DIR}/references/03-judge-spec.md`** — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
 
 ## Design Steps
 
@@ -23,27 +23,27 @@ Read the following vibeval protocol references before designing:
 
 For each pipeline in the analysis, design one or more datasets.
 
-For data item format (single-turn items and multi-turn personas), consult `references/02-dataset.md`.
+For data item format (single-turn items and multi-turn personas), consult `${CLAUDE_SKILL_DIR}/references/02-dataset.md`.
 
-Each data item should have a clear testing intent — what specific capability or failure mode is being tested. Apply the information asymmetry principle from `references/00-philosophy.md`: embed deliberate traps and edge cases that will be visible only to the judge.
+Each data item should have a clear testing intent — what specific capability or failure mode is being tested. Apply the information asymmetry principle from `${CLAUDE_SKILL_DIR}/references/00-philosophy.md`: embed deliberate traps and edge cases that will be visible only to the judge.
 
 ### 2. Design Judge Specs
 
-Consult `references/03-judge-spec.md` for the complete list of available rules, LLM scoring modes (binary/five-point), `target` options for process evaluation, and all required fields.
+Consult `${CLAUDE_SKILL_DIR}/references/03-judge-spec.md` for the complete list of available rules, LLM scoring modes (binary/five-point), `target` options for process evaluation, and all required fields.
 
-Key design guidance (from `references/00-philosophy.md`):
+Key design guidance (from `${CLAUDE_SKILL_DIR}/references/00-philosophy.md`):
 
 - `test_intent` and `trap_design` encode the designer's insider knowledge — what the test is designed to catch, what traps are embedded in the data. These are REQUIRED for LLM specs.
 - `anchors` must describe what good/bad looks like **for this specific test scenario**, not generic quality statements.
 - `calibrations` must show concrete examples from the test scenario that reveal the pitfalls the tested AI might fall into.
-- Use `target` to decompose evaluation: one spec for final output, others for specific turns or step types. Consult `references/03-judge-spec.md` for target syntax.
+- Use `target` to decompose evaluation: one spec for final output, others for specific turns or step types. Consult `${CLAUDE_SKILL_DIR}/references/03-judge-spec.md` for target syntax.
 - One JudgeSpec per evaluation dimension. Do not combine multiple criteria.
 
 ### 3. Design Test Structure
 
 **For single-turn tests:**
 - Mock external deps using the test framework's mock mechanism
-- Wrap mocks to capture trace steps (for trace format, consult `references/04-result.md`)
+- Wrap mocks to capture trace steps (for trace format, consult `${CLAUDE_SKILL_DIR}/references/04-result.md`)
 - Each test: 1 turn with input → steps → output
 
 **For multi-turn tests:**
@@ -88,7 +88,7 @@ datasets:
         data: { ... }
 
     judge_specs:
-      # See references/03-judge-spec.md for complete field definitions
+      # See ${CLAUDE_SKILL_DIR}/references/03-judge-spec.md for complete field definitions
       - method: rule
         rule: "<rule_name>"
         args: { ... }
