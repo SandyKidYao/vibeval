@@ -89,6 +89,8 @@ When modifying plugin commands or skills:
 ```
 vibeval/
 ├── src/vibeval/            # CLI tool implementation
+│   └── serve/              # Web dashboard (vibeval serve)
+│       └── static/         # Frontend assets (HTML, CSS, JS)
 ├── plugin/                # Claude Code plugin
 │   ├── commands/           # /vibeval-analyze, /vibeval-design, /vibeval-generate, /vibeval-run, /vibeval-update
 │   └── skills/protocol/    # Data protocol (Source of Truth)

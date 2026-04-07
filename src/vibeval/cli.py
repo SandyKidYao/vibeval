@@ -68,17 +68,18 @@ def main() -> None:
     p_diff.add_argument("run_a", help="First run ID")
     p_diff.add_argument("run_b", help="Second run ID")
 
-    p_report = sub.add_parser("report",
-        help="Generate a self-contained HTML report for a test run",
-        description="Generate a comprehensive static HTML report with test design, "
-                    "test data, trace visualization, and full judge results. "
-                    "The report is a single self-contained HTML file that can be opened in any browser.")
-    p_report.add_argument("feature", help="Feature name")
-    p_report.add_argument("run_id", help="Run ID")
-    p_report.add_argument("--output", "-o", default=None,
-        help="Output file path (default: {results_dir}/{run_id}/report.html)")
-    p_report.add_argument("--open", action="store_true",
-        help="Open the report in the default browser after generation")
+    # --- Server ---
+    p_serve = sub.add_parser("serve",
+        help="Launch interactive web dashboard for browsing features, results, and datasets",
+        description="Start a local web server with an interactive dashboard. "
+                    "Browse features, view test results and traces, visualize trends across runs, "
+                    "and manage datasets and judge specs. The server runs on localhost.")
+    p_serve.add_argument("--port", type=int, default=8080,
+        help="Port to listen on (default: 8080)")
+    p_serve.add_argument("--host", default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1)")
+    p_serve.add_argument("--open", action="store_true",
+        help="Open the dashboard in the default browser automatically")
 
     # --- Environment ---
     sub.add_parser("check",
@@ -101,7 +102,9 @@ def main() -> None:
 
     config = Config.load(args.project)
 
-    if args.command == "check":
+    if args.command == "serve":
+        cmd_serve(config, args.host, args.port, getattr(args, 'open', False))
+    elif args.command == "check":
         cmd_check(config)
     elif args.command == "simulate":
         cmd_simulate(args.persona, args.history, config)
@@ -115,10 +118,20 @@ def main() -> None:
         cmd_compare(args.feature, args.run_a, args.run_b, config)
     elif args.command == "runs":
         cmd_runs(args.feature, config)
-    elif args.command == "report":
-        cmd_report(args.feature, args.run_id, config, args.output, getattr(args, 'open', False))
     elif args.command == "features":
         cmd_features(config)
+
+
+def cmd_serve(config: Config, host: str, port: int, open_browser: bool) -> None:
+    """Launch the interactive web dashboard."""
+    from .serve import start_server
+
+    if open_browser:
+        import webbrowser
+        import threading
+        threading.Timer(0.5, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+
+    start_server(config, host, port)
 
 
 def cmd_check(config: Config) -> None:
@@ -269,19 +282,6 @@ def cmd_runs(feature: str, config: Config) -> None:
             print(f"  {run_id}  tests={summary['total']}  pass_rate={bs.get('pass_rate', 0):.0%}")
         except FileNotFoundError:
             print(f"  {run_id}  (no summary)")
-
-
-def cmd_report(feature: str, run_id: str, config: Config, output: str | None, open_browser: bool) -> None:
-    """Generate an HTML report for a test run."""
-    from .report import generate_report
-
-    run_dir = config.results_dir(feature) / run_id
-    datasets_dir = config.datasets_dir(feature)
-    out_path = generate_report(feature, run_id, str(run_dir), str(datasets_dir), output)
-    print(f"Report saved to {out_path}")
-    if open_browser:
-        import webbrowser
-        webbrowser.open(f"file://{out_path.resolve()}")
 
 
 def cmd_features(config: Config) -> None:

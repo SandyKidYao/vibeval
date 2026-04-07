@@ -72,7 +72,7 @@ Generate a complete test suite (synthetic data + test code) using your project's
 /vibeval-run meeting_summary
 ```
 
-All in one step: run tests → evaluate → diagnostic analysis → generate report.
+All in one step: run tests → evaluate → diagnostic analysis.
 
 ### Update After Code Changes
 
@@ -92,13 +92,13 @@ vibeval diff meeting_summary run_a run_b
 vibeval compare meeting_summary run_a run_b
 ```
 
-### Visual Report
+### Interactive Dashboard
 
 ```bash
-vibeval report meeting_summary latest --open
+vibeval serve --open
 ```
 
-Generate a self-contained HTML report covering test design, data, process traces, and judgment results.
+Launch a web dashboard to browse all features, view test results and traces, visualize trends across runs, and manage datasets and judge specs.
 
 ### Other Commands
 

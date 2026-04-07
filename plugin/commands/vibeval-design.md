@@ -125,4 +125,5 @@ test_code:
 Inform the user:
 1. Summary: datasets (single-turn/multi-turn), items, judge specs count
 2. Ask to review judge specs — anchors, calibrations, test_intent, and trap_design directly affect evaluation quality
-3. Instruct to run `/vibeval-generate $1` when satisfied
+3. Suggest `vibeval serve --open` to visually review and edit datasets, items, and judge specs in the interactive dashboard
+4. Instruct to run `/vibeval-generate $1` when satisfied

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vibeval"
-version = "0.1.5"
+version = "0.2.0"
 description = "vibeval (Vibe Coding Eval) — AI application testing framework"
 requires-python = ">=3.10"
 license = "MIT"
@@ -29,6 +29,12 @@ vibeval = "vibeval.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vibeval"]
+
+[tool.hatch.build]
+include = [
+    "src/vibeval/**/*.py",
+    "src/vibeval/serve/static/**",
+]
 
 [project.urls]
 Homepage = "https://github.com/SandyKidYao/vibeval"

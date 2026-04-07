@@ -75,17 +75,7 @@ Read the result files from `tests/vibeval/$1/results/$2/` and perform structured
 
 Present the diagnosis as a concise summary: what passed, what failed, why, and what to do about it.
 
-### 6. Generate Report
-
-Generate a static HTML report for the developer to review visually:
-
-```bash
-vibeval report $1 $2
-```
-
-Tell the user the report file path so they can open it in a browser.
-
-### 7. Suggest Next Steps
+### 6. Suggest Next Steps
 
 Based on the diagnosis:
 
@@ -93,6 +83,7 @@ Based on the diagnosis:
 - **If previous runs exist**: suggest running `vibeval compare $1 {previous_run} $2` for deeper cross-version analysis.
 - **If results look good**: suggest committing the test suite and datasets to version control.
 - **To iterate**: edit datasets or test code, then run `/vibeval-run $1` again.
+- **To review visually**: suggest `vibeval serve --open` to browse results, traces, trends, and manage datasets in the interactive dashboard.
 
 ## Error Handling
 
