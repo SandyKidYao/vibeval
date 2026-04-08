@@ -17,9 +17,10 @@ Each turn has a fixed structure: **input → steps[] → output**.
 ```
 tests/vibeval/
 ├── {feature_name}/                # Organized by feature module
-│   ├── analysis/                  # /vibeval-analyze artifacts (optional)
+│   ├── contract.yaml              # Negotiated standard (requirements, quality criteria)
+│   ├── analysis/                  # /vibeval analyze phase artifacts (optional)
 │   │   └── ...
-│   ├── design/                    # /vibeval-design artifacts (optional)
+│   ├── design/                    # /vibeval design phase artifacts (optional)
 │   │   └── ...
 │   ├── datasets/                  # Synthetic test data + evaluation criteria
 │   │   └── {dataset_name}/

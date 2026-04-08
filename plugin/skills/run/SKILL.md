@@ -1,23 +1,20 @@
 ---
-description: Run vibeval tests, execute judge evaluation, and show results
-argument-hint: [feature-name] [run-id]
+name: run
+description: Run vibeval tests, execute judge evaluation, diagnose results, and suggest next steps. Use when entering the run phase of the /vibeval workflow.
 ---
 
-Run the full test-evaluate cycle for feature `$1`: execute tests, run judge, show results.
+# vibeval Run Phase
 
-Run ID: `$2` (default: `latest`).
+Execute the full test-evaluate cycle for a feature: run tests, judge results, diagnose failures.
 
-If `$1` is not provided, list available features that have `tests/` directory and ask the user to choose.
+**Before starting, read:**
+- `tests/vibeval/{feature}/contract.yaml` — The negotiated contract. Diagnosis should reference contract requirements when analyzing failures.
 
-## Prerequisites
-
-The feature must have generated test code at `tests/vibeval/$1/tests/`. If not found, instruct the user to run the full workflow: `/vibeval-analyze $1` → `/vibeval-design $1` → `/vibeval-generate $1`.
-
-## Execution Steps
+## Steps
 
 ### 1. Detect Test Framework
 
-Check the test code directory for framework indicators:
+Check `tests/vibeval/{feature}/tests/` for framework indicators:
 - `conftest.py` or `test_*.py` → pytest
 - `*.test.ts` or `*.spec.ts` → vitest/jest
 - `*_test.go` → go test
@@ -25,17 +22,17 @@ Check the test code directory for framework indicators:
 
 ### 2. Run Tests
 
-Execute the test suite using the detected framework. The tests will produce result files at `tests/vibeval/$1/results/{run_id}/`.
+Execute the test suite using the detected framework. The tests will produce result files at `tests/vibeval/{feature}/results/{run_id}/`.
 
 ```bash
 # Python/pytest
-cd tests/vibeval/$1/tests && python -m pytest . -v
+cd tests/vibeval/{feature}/tests && python -m pytest . -v
 
 # TypeScript/vitest
-npx vitest run tests/vibeval/$1/tests/
+npx vitest run tests/vibeval/{feature}/tests/
 
 # Go
-go test ./tests/vibeval/$1/tests/
+go test ./tests/vibeval/{feature}/tests/
 ```
 
 If tests fail at the framework level (import errors, syntax errors, etc.), report the error and stop. Test assertion failures are fine — vibeval judge handles evaluation separately.
@@ -45,7 +42,7 @@ If tests fail at the framework level (import errors, syntax errors, etc.), repor
 Execute vibeval judge to evaluate the results:
 
 ```bash
-vibeval judge $1 $2
+vibeval judge {feature} {run_id}
 ```
 
 This reads judge_specs from datasets/ and evaluates each result file.
@@ -56,7 +53,7 @@ Display the judge output (summary with binary pass rate and five-point distribut
 
 ### 5. Diagnose Results
 
-Read the result files from `tests/vibeval/$1/results/$2/` and perform structured analysis:
+Read the result files from `tests/vibeval/{feature}/results/{run_id}/` and perform structured analysis:
 
 1. **Identify failures**: For each failed judge result (score=0 for binary, score<=2 for five-point), read the result file and analyze:
    - Which judge spec failed and why (the `reason` field)
@@ -75,15 +72,15 @@ Read the result files from `tests/vibeval/$1/results/$2/` and perform structured
 
 Present the diagnosis as a concise summary: what passed, what failed, why, and what to do about it.
 
-### 6. Suggest Next Steps
+## Checkpoint
 
-Based on the diagnosis:
+Present diagnosis, then offer next steps:
 
-- **If there are fixable failures**: offer to help fix the application code based on the diagnosis above.
-- **If previous runs exist**: suggest running `vibeval compare $1 {previous_run} $2` for deeper cross-version analysis.
-- **If results look good**: suggest committing the test suite and datasets to version control.
-- **To iterate**: edit datasets or test code, then run `/vibeval-run $1` again.
-- **To review visually**: suggest `vibeval serve --open` to browse results, traces, trends, and manage datasets in the interactive dashboard.
+- **Fix failures**: offer to help fix the application code based on the diagnosis above.
+- **Compare runs**: if previous runs exist, suggest running `vibeval compare {feature} {previous_run} {run_id}` for deeper cross-version analysis.
+- **Iterate**: edit datasets or test code, then re-run.
+- **Visual review**: suggest `vibeval serve --open` to browse results, traces, trends, and manage datasets in the interactive dashboard.
+- **Commit**: if results look good, suggest committing the test suite and datasets to version control.
 
 ## Error Handling
 

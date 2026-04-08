@@ -626,7 +626,7 @@ async function renderAnalysis(params) {
   wrap.appendChild($('div', {className: 'page-title'}, 'Analysis'));
 
   if (!data || Object.keys(data).length === 0) {
-    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No analysis data found. Run /vibeval-analyze to generate.')));
+    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No analysis data found. Run /vibeval to generate.')));
     return wrap;
   }
 
@@ -763,7 +763,7 @@ async function renderDesignPage(params) {
   wrap.appendChild($('div', {className: 'page-title'}, 'Test Design'));
 
   if (!data || Object.keys(data).length === 0) {
-    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No design data found. Run /vibeval-design to generate.')));
+    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No design data found. Run /vibeval to generate.')));
     return wrap;
   }
 

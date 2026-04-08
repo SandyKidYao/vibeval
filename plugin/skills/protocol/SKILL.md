@@ -20,6 +20,7 @@ LLM-as-Judge works NOT because the judge is smarter, but because vibeval gives i
 
 The following is a condensed overview. For complete definitions and field specs, consult the reference files listed below.
 
+- **Contract** (`contract.yaml`): negotiated standard between user and agent — captures requirements beyond code, quality criteria, known gaps. All phases reference it; the Evaluator Agent reviews against it.
 - All tests are N-turn interactions (single-turn = N=1). Each turn: **input → steps[] → output**
 - Tests organized by feature: `tests/vibeval/{feature}/`
 - Two evaluation methods: **rule** (deterministic) and **llm** (binary 0/1 or five-point 1-5)
@@ -45,3 +46,4 @@ All foundational definitions live here. Commands and other docs reference these,
 - **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
 - **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
 - **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/05-comparison.md`** — Pairwise comparison, position bias elimination
+- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/06-contract.md`** — Contract format: requirements, known gaps, quality criteria, feedback log

@@ -1,19 +1,26 @@
 ---
-description: Generate vibeval test code and datasets from design
-argument-hint: [feature-name]
+name: generate
+description: Generate vibeval test code and datasets from design — produces runnable test suite with zero vibeval dependency. Use when entering the generate phase of the /vibeval workflow.
 ---
 
-Read the design file for feature `$1` at `tests/vibeval/$1/design/` and generate all vibeval test artifacts.
+# vibeval Generate Phase
 
-If `$1` is not provided, list available features under `tests/vibeval/` that have `design.yaml` and ask the user to choose.
+Read `tests/vibeval/{feature}/design/` and generate all test artifacts.
 
-## Prerequisites
+**Before starting, read:**
+- `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** Synthetic data must cover all requirements; traps should target known gaps.
+- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — Evaluation philosophy governs how synthetic data and judge_specs should be crafted.
+- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md` — Dataset format.
+- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md` — Result and trace format (the test code must produce conforming files).
 
-The design file must exist at `tests/vibeval/$1/design/`. If not found, instruct the user to run `/vibeval-design $1` first.
+## Contract Alignment
 
-Read the design file and vibeval protocol references before generating. In particular, read `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — the evaluation philosophy governs how synthetic data and judge_specs should be crafted.
+When generating synthetic data items:
+- Ensure data items exist for every contract requirement (check traceability from design)
+- For `known_gaps`, generate data items that specifically probe the gap (e.g., if multilingual is a gap, generate inputs in each required language)
+- Traps should be informed by `known_gaps` — these are where the AI is most likely to fail
 
-## Generation Steps
+## Steps
 
 ### 1. Confirm LLM Provider
 
@@ -207,7 +214,6 @@ def test_chatbot_safety(persona_item):
 
         # Generate next user message via vibeval simulate
         if i < rounds - 1:
-            # Write persona and history to temp files
             with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as pf:
                 json.dump(persona, pf)
                 persona_path = pf.name
@@ -256,7 +262,7 @@ def make_tracked_bot(bot, collector):
 
 This wrapper is called between `begin_turn` and `end_turn`, so steps are automatically associated with the current turn.
 
-### 5. Review Design–Implementation Consistency
+### 5. Review Design-Implementation Consistency
 
 After generating all artifacts (datasets + test code), review them together to catch issues that are invisible when looking at the design or implementation in isolation. This step iterates until no new issues are found.
 
@@ -265,7 +271,7 @@ After generating all artifacts (datasets + test code), review them together to c
 For each rule-type judge_spec, trace the `field` reference (e.g. `outputs.content`) into the generated test code and check:
 
 - **Type match**: does the value assigned to that field in the test code match what the rule expects? For example, `length_between` expects a single string, not a concatenation of all turns.
-- **Semantic match**: does the value represent what the designer intended? If the design says "single reply length ≤ 200 chars" but the implementation assigns a multi-turn concatenation to `outputs.content`, the rule will evaluate the wrong thing.
+- **Semantic match**: does the value represent what the designer intended? If the design says "single reply length <= 200 chars" but the implementation assigns a multi-turn concatenation to `outputs.content`, the rule will evaluate the wrong thing.
 - **Multi-turn attention**: for multi-turn tests, pay special attention to how `collector.outputs` fields are assembled — concatenation, last-turn-only, or per-turn list — and verify this matches the judge_spec's assumptions.
 
 #### 5b. Coverage Check
@@ -295,9 +301,9 @@ Before finalizing, verify all generated artifacts against the protocol reference
 - No imports from `vibeval` package in test code
 - Multi-turn tests use `vibeval simulate` CLI (not Python API)
 
-## Output Summary
+## Checkpoint
 
-After generation, inform the user:
+After generation, present to the user:
 
 1. Files created:
    - `.vibeval.yml` (if new)
@@ -320,6 +326,10 @@ After generation, inform the user:
 
 3. For multi-turn: ensure `vibeval` CLI is installed and accessible in PATH
 
-4. Mention that design–implementation consistency has been reviewed (Step 5) and list any issues that were found and fixed
+4. Design-implementation consistency review results (Step 5) and any issues found and fixed
 
 5. LLM provider: confirm which provider is configured and how to switch if needed
+
+6. Ask: **"Generation complete. Shall I run the tests and evaluate?"**
+
+Wait for user confirmation before proceeding to the run phase.

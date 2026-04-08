@@ -1,23 +1,27 @@
 ---
-description: Analyze codebase to identify AI call points and data flow for vibeval testing
-argument-hint: [feature-name] [source-path]
+name: analyze
+description: Analyze codebase to identify AI call points, data flow, mock points, and testability for vibeval testing. Use when entering the analyze phase of the /vibeval workflow.
 ---
 
-Analyze the source code to identify AI call points and data flow for the feature `$1`.
-Source path: `$2` (default: auto-detect from project structure).
+# vibeval Analyze Phase
 
-If `$1` is not provided, ask the user for a feature name (e.g., "meeting_summary", "chatbot", "document_qa").
+Perform a thorough analysis of the codebase to prepare for test generation.
 
-## Task
+**Before starting, read:**
+- `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** All analysis must address the requirements and known gaps defined here.
+- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
+- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md` — Directory structure, unified turn model
 
-Perform a thorough analysis of the codebase to prepare for vibeval test generation.
-Produce analysis artifacts in `tests/vibeval/$1/analysis/`.
+Produce analysis artifacts in `tests/vibeval/{feature}/analysis/`.
 
-Read vibeval protocol references before starting:
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md` — directory structure and unified turn model
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — evaluation philosophy (informs testability suggestions)
+## Contract Alignment
 
-## Analysis Steps
+The contract contains requirements that may not be visible in the code. During analysis:
+- For each `requirement` in the contract, check whether the codebase supports it
+- If a requirement has no code support, note it in `suggestions` as a gap (this informs the Evaluator)
+- Ensure `known_gaps` from the contract are reflected in the analysis output
+
+## Steps
 
 ### 1. Identify AI Call Points
 
@@ -33,9 +37,9 @@ For each call point, record: file path, function name, purpose, input/output des
 
 All vibeval tests are N-turn interactions; single-turn is N=1 (see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md` for the unified model).
 
-Classify the pipeline:
+Classify each pipeline:
 - **Single-turn** (N=1): one input → one output (summarization, classification, extraction, etc.)
-- **Multi-turn** (N>1): conversational system taking multiple rounds of user input (chatbots, agents). Must expose a `(str) -> str` chat entry point.
+- **Multi-turn** (N>1): conversational system taking multiple rounds of user input. Must expose a `(str) -> str` chat entry point.
 
 Record as `type: single-turn` or `type: multi-turn` in the analysis.
 For multi-turn, also identify the chat entry point function signature.
@@ -48,22 +52,22 @@ Trace how data flows through the pipeline:
 
 ### 4. Identify Mock Points
 
-For each external dependency:
+For each external dependency, record:
 - The exact function/method to mock
 - The mock target path (e.g., `myapp.services.llm_client.chat`)
 - What synthetic data the mock should return
 
 ### 5. Filter Non-AI Pipelines
 
-Before proceeding, exclude any pipeline that does not produce non-deterministic AI output. A pipeline is **out of vibeval scope** if:
+Exclude any pipeline that does not produce non-deterministic AI output. A pipeline is **out of vibeval scope** if:
 - It has no AI calls (`ai_calls` is empty)
 - Its outputs are fully determined by its inputs (routing, dispatching, parsing, validation, formatting)
 
-Even if such a pipeline sits upstream of an AI pipeline (e.g., a message dispatcher that routes to an AI handler), it is deterministic logic and should be tested with standard unit tests, not vibeval. **Do not include it in the `pipelines` list in the output.**
+Even if such a pipeline sits upstream of an AI pipeline (e.g., a message dispatcher that routes to an AI handler), it is deterministic logic and should be tested with standard unit tests, not vibeval. **Do not include it in the `pipelines` list.**
 
 ### 6. Evaluate Testability
 
-For the remaining pipelines, assess and suggest improvements ranked by impact:
+Assess and suggest improvements ranked by impact:
 - **Coupling**: LLM calls embedded in business logic → extract to separate functions
 - **Context visibility**: prompt construction hidden → separate prompt building
 - **Output parsing**: tightly coupled to LLM call → make parsing a separate function
@@ -72,13 +76,11 @@ For the remaining pipelines, assess and suggest improvements ranked by impact:
 
 ## Output Format
 
-Write the primary analysis to `tests/vibeval/{feature_name}/analysis/analysis.yaml`.
+Write the primary analysis to `tests/vibeval/{feature}/analysis/analysis.yaml`.
 Additional artifacts (data flow diagrams, notes, etc.) can be placed alongside in the same directory.
 
 ```yaml
-# vibeval Analysis — generated by /vibeval-analyze
-# Review and edit before running /vibeval-design
-
+# vibeval Analysis
 project:
   name: "<project name>"
   language: "<python|typescript|go|...>"
@@ -129,10 +131,12 @@ suggestions:
     suggestion: "<what to do>"
 ```
 
-## After Analysis
+## Checkpoint
 
-Inform the user:
-1. Summary: pipelines included, type (single-turn/multi-turn), AI calls, mock points
+Present to the user:
+1. Summary: pipelines found, type (single-turn/multi-turn), AI calls, mock points
 2. If any pipelines were excluded as non-AI deterministic logic, list them and briefly explain why (so the user knows they weren't overlooked)
 3. Testability improvement suggestions ranked by severity
-4. Instruct to review `tests/vibeval/{feature}/analysis/`, then run `/vibeval-design {feature}`
+4. Ask: **"Analysis complete. Shall I proceed to design the test plan?"**
+
+Wait for user confirmation before proceeding to the design phase.

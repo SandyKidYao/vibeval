@@ -123,7 +123,37 @@ vibeval's judging LLM is not subject to these limitations because it receives **
    - criteria: "Was the bot's tool call sequence reasonable"
    ```
 
-## Summary: vibeval's Two Structural Advantages
+## Principle 3: Negotiated Requirements — The Contract
+
+Code analysis alone cannot surface all requirements. For AI applications, critical expectations often exist outside the code: in the user's mind, in product specs, in implicit quality standards. If the test designer only knows what the code does, the resulting tests will only verify current behavior — not intended behavior.
+
+vibeval solves this through the **contract** (`contract.yaml`): a negotiated agreement between the user and the VibeCoding Agent that captures:
+
+- **User-stated requirements** (`source: user`): expectations the code doesn't implement yet — "must support multilingual", "refuse harmful content politely"
+- **Known gaps**: where the code falls short of requirements — these are the highest-priority test targets
+- **Quality criteria**: the bar for test design quality itself — coverage breadth, trap realism, anchor specificity
+
+**Design Principles:**
+
+8. **Actively elicit requirements beyond code**
+
+   Do not rely solely on code analysis. During the negotiation phase, ask the user: "What should this feature do that isn't reflected in the code?" Requirements with `source: user` are the most valuable because they represent information that pure code analysis would miss entirely.
+
+9. **Trace every requirement through the artifact chain**
+
+   Every requirement in the contract must be traceable: contract → analysis → design → datasets → judge specs. If a requirement has no corresponding test coverage, the Evaluator flags it as a gap.
+
+10. **Proactively expand testing coverage with the Consultant**
+
+    The user may not be a testing specialist and may not anticipate common AI failure modes (hallucination, prompt injection, context forgetting, format degradation, etc.). The Consultant Agent brings testing expertise to the negotiation — it analyzes the feature and suggests scenarios the user hasn't considered. Accepted suggestions become `source: suggested` requirements in the contract, ensuring they are traced through all subsequent phases.
+
+11. **Evolve the contract through feedback**
+
+    The contract is not static. User feedback at each phase checkpoint is recorded in `feedback_log` and may trigger updates to requirements, quality criteria, or known gaps. This continuous refinement ensures the test suite stays aligned with evolving user expectations.
+
+For the complete contract format, see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/06-contract.md`.
+
+## Summary: vibeval's Three Structural Advantages
 
 ```
 AI under test has only:     vibeval judge has:
@@ -136,8 +166,9 @@ AI under test has only:     vibeval judge has:
                              - reference answer (ground truth)
                              - anchors (specific criteria for good/bad)
                              - calibrations (scoring calibration)
+                             - contract (user requirements beyond code)
 ```
 
-This information asymmetry ensures that the judging LLM always has more context than the AI under test when evaluating specific test scenarios. Not because the judging LLM is smarter, but because it knows more.
+This information asymmetry ensures that the judging LLM always has more context than the AI under test when evaluating specific test scenarios. Not because the judging LLM is smarter, but because it knows more — and the contract ensures it knows what the user intended, not just what the code does.
 
-All vibeval commands (/vibeval-analyze, /vibeval-design, /vibeval-generate) must follow these two principles when generating test data and evaluation criteria.
+The `/vibeval` command must follow these three principles in all phases (analyze, design, generate) when generating test data and evaluation criteria.

@@ -4,7 +4,7 @@
 
 vibeval (Vibe Coding Eval) is an AI application evaluation framework consisting of two parts:
 - **vibeval CLI** (`src/vibeval/`) — Evaluation tools (judge, compare, simulate, diff, report, check, etc.)
-- **Claude Code Plugin** (`plugin/`) — VibeCoding workflow (analyze, design, generate, run, update)
+- **Claude Code Plugin** (`plugin/`) — VibeCoding workflow (unified `/vibeval` command)
 
 ## Core Principles
 
@@ -13,12 +13,13 @@ vibeval (Vibe Coding Eval) is an AI application evaluation framework consisting 
 The protocol documents under `plugin/skills/protocol/references/` are the project's Source of Truth. All plugin commands, CLI code, and documentation must follow and adhere to the protocol. When any content conflicts with the protocol, the protocol takes precedence. When writing documentation or commands, avoid duplicating definitions already present in the protocol; reference the protocol files instead.
 
 Protocol files:
-- `00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective)
+- `00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
 - `01-overview.md` — Directory structure, unified turn model
 - `02-dataset.md` — Dataset format
 - `03-judge-spec.md` — Judge specification (rule/llm, target, all field definitions)
 - `04-result.md` — Result format (trace turns/steps)
 - `05-comparison.md` — Comparison format
+- `06-contract.md` — Contract format (requirements, known gaps, quality criteria)
 
 ### 2. Language Agnostic
 
@@ -92,8 +93,17 @@ vibeval/
 │   └── serve/              # Web dashboard (vibeval serve)
 │       └── static/         # Frontend assets (HTML, CSS, JS)
 ├── plugin/                # Claude Code plugin
-│   ├── commands/           # /vibeval-analyze, /vibeval-design, /vibeval-generate, /vibeval-run, /vibeval-update
-│   └── skills/protocol/    # Data protocol (Source of Truth)
+│   ├── commands/vibeval.md # /vibeval — unified entry point (state detection + contract + routing)
+│   ├── agents/             # Subagents
+│   │   ├── evaluator.md    # Evaluator (reviews phase outputs against contract)
+│   │   └── consultant.md   # Consultant (suggests test scenarios and edge cases)
+│   └── skills/             # Phase skills (loaded on demand by /vibeval)
+│       ├── analyze/        # Codebase analysis
+│       ├── design/         # Test plan design
+│       ├── generate/       # Code and dataset generation
+│       ├── run/            # Test execution and evaluation
+│       ├── update/         # Incremental updates after code changes
+│       └── protocol/       # Data protocol (Source of Truth)
 ├── examples/              # Standalone example applications
 ├── tests/                 # vibeval's own tests
 ├── CLAUDE.md

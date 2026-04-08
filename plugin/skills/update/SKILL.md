@@ -1,36 +1,43 @@
 ---
-description: Update vibeval tests and datasets after code changes
-argument-hint: [scope]
+name: update
+description: Incrementally update vibeval test artifacts after code changes — preserves existing tests, adds/modifies only what's necessary. Use when entering the update phase of the /vibeval workflow.
 ---
 
-Detect code changes and incrementally update vibeval test artifacts. Scope can be a file path, "all", or empty (auto-detect from git diff).
+# vibeval Update Phase
+
+Detect code changes and incrementally update test artifacts. This phase preserves existing tests and adds/modifies only what's necessary.
 
 ## Prerequisites
 
 Existing vibeval test artifacts must be present:
+- `tests/vibeval/{feature}/contract.yaml`
 - `tests/vibeval/{feature}/analysis/`
 - `tests/vibeval/{feature}/design/`
-- `tests/vibeval/datasets/` with at least one dataset
+- `tests/vibeval/{feature}/datasets/` with at least one dataset
+- `tests/vibeval/{feature}/tests/`
 
-If these do not exist, instruct the user to run the full workflow: `/vibeval-analyze` → `/vibeval-design` → `/vibeval-generate`.
+If these do not exist, the `/vibeval` command should route to the full workflow instead.
 
-## Update Steps
+**Before starting, read:**
+- `tests/vibeval/{feature}/contract.yaml` — The negotiated contract. Updates must maintain coverage of all requirements.
+
+## Steps
 
 ### 1. Detect Changes
 
 Determine what changed:
 
-**If scope is a file path:** analyze only that file.
+**If a specific scope was provided (file path):** analyze only that file.
 
 **If scope is "all":** re-analyze the full codebase.
 
-**If scope is empty:** use git to find changes:
+**If no scope:** use git to find changes:
 ```
 git diff --name-only HEAD
 git diff --name-only --staged
 ```
 
-Filter to files relevant to vibeval (files containing AI call points from `analysis/`).
+Filter to files relevant to vibeval (files containing AI call points from `analysis/analysis.yaml`).
 
 ### 2. Assess Impact
 
@@ -62,13 +69,15 @@ For each changed file, determine impact on existing tests:
 
 ### 3. Update Artifacts
 
-**Update `tests/vibeval/analysis/`:**
+Update in place — add new, modify changed, preserve unchanged:
+
+**Update `tests/vibeval/{feature}/analysis/`:**
 - Add new AI calls and dependencies
 - Update changed function signatures and mock targets
 - Remove deleted entries
-- Re-run evaluability suggestions for changed code
+- Re-run testability suggestions for changed code
 
-**Update `tests/vibeval/design/`:**
+**Update `tests/vibeval/{feature}/design/`:**
 - Add new test cases for new AI calls
 - Update mock responses if call signatures changed
 - Add new judge specs for new behaviors
@@ -108,16 +117,12 @@ Test code updates:
   + 1 new test function
 
 Action needed:
-  ⚠ Review updated mock responses for module.existing_function
-  ⚠ New calibration examples needed for new judge spec
+  - Review updated mock responses for module.existing_function
+  - New calibration examples needed for new judge spec
 ```
 
-## Output
+## Checkpoint
 
-Update files in place:
-- `tests/vibeval/analysis/` — updated
-- `tests/vibeval/design/` — updated
-- `tests/vibeval/datasets/` — items added/updated
-- Test code files — updated
+Present the change summary, then ask: **"Update complete. Would you like to run the tests to verify?"**
 
-Inform the user what changed and what needs manual review.
+If yes, proceed to the run phase.

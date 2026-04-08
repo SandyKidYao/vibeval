@@ -34,53 +34,19 @@ Before first use, verify that the LLM provider is set up correctly:
 vibeval check
 ```
 
-Then run everything inside Claude Code without ever leaving the conversation:
+Then run the unified workflow inside Claude Code:
 
 ```
-/vibeval-analyze  →  /vibeval-design  →  /vibeval-generate  →  /vibeval-run
-                                                      ↑
-                      Code changes → /vibeval-update ──────┘
+/vibeval meeting_summary
 ```
 
-### Analyze Code
+The `/vibeval` command detects your project state and guides you through the appropriate phase:
 
-```
-/vibeval-analyze meeting_summary src/services/
-```
+- **New project** — Scans for AI code, suggests features to test, runs the full pipeline
+- **In progress** — Verifies existing artifacts, continues from where you left off
+- **Complete** — Detects code changes for incremental updates, or lets you re-run, add tests, or modify designs
 
-Analyze source code to identify AI call sites, data flows, and mock points, and provide suggestions for improving testability.
-
-### Design Tests
-
-```
-/vibeval-design meeting_summary
-```
-
-Design synthetic data specifications, judging criteria, and test structure. Each step produces editable intermediate files that you can review and modify.
-
-### Generate Code and Data
-
-```
-/vibeval-generate meeting_summary
-```
-
-Generate a complete test suite (synthetic data + test code) using your project's test framework (pytest/vitest/jest/...).
-
-### Run + Evaluate
-
-```
-/vibeval-run meeting_summary
-```
-
-All in one step: run tests → evaluate → diagnostic analysis.
-
-### Update After Code Changes
-
-```
-/vibeval-update meeting_summary
-```
-
-Detect code changes and incrementally update the test suite and data.
+Each phase (analyze → design → generate → run) pauses for your review before continuing. Every step produces editable intermediate files.
 
 ### Cross-Version Comparison
 
