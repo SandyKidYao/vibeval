@@ -107,8 +107,43 @@ Multi-turn conversations are driven by vibeval's conversation simulator (`vibeva
 | _id | string | Unique identifier; defaults to filename |
 | _tags | list[string] | Tags |
 | _judge_specs | list[JudgeSpec] | Item-specific judge specifications, **overrides** manifest defaults |
+| _mock_context | object | Mock responses for external dependencies (tools, APIs, databases) used during AI processing |
 
 Evaluation criteria priority: data item `_judge_specs` > manifest `judge_specs`.
+
+## Mock Context
+
+When the AI under test calls external tools, APIs, or databases during processing, these responses are **part of the test input** — they shape AI behavior just as much as the user's message. The `_mock_context` field embeds these environment responses directly in the data item so they are designed as test data, not engineering afterthoughts.
+
+```json
+{
+  "_id": "search_returns_empty",
+  "_mock_context": {
+    "myapp.services.search.query": {
+      "responses": [{"results": [], "total": 0}],
+      "description": "Search returns no results — tests graceful degradation"
+    },
+    "myapp.services.db.get_user": {
+      "responses": [{"name": "Alice", "language": "zh-CN"}],
+      "description": "User profile indicates Chinese-speaking user"
+    }
+  },
+  "user_message": "Help me find information about quantum computing"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| _mock_context | object | Keys are mock target paths (matching `mock_target` in analysis). Values define what each dependency returns for this test item. |
+| _mock_context.{target}.responses | list | Ordered list of responses. For multi-call scenarios, responses are consumed in order. |
+| _mock_context.{target}.description | string | Why this mock response was chosen — what test dimension it exercises. This is part of the information asymmetry: the judge sees it, the AI under test does not. |
+
+**Design principles for mock context:**
+
+1. **Mock data is test data** — design it with the same deliberation as user inputs. A search tool returning empty results, a database returning stale data, an API returning an error — these are all test scenarios that exercise AI behavior.
+2. **Traps live in mock context too** — if the AI should detect a contradiction between user input and tool output, embed that contradiction deliberately and document it in `description`.
+3. **Per-item variation** — different items in the same dataset should exercise different mock scenarios (success, empty, error, edge-case data) to cover the AI's behavior across environment conditions.
+4. **Multi-call ordering** — for pipelines that call the same dependency multiple times, `responses` is an ordered list consumed sequentially.
 
 ## Single-file Dataset
 

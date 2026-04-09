@@ -37,7 +37,7 @@ All foundational definitions live here. Commands and other docs reference these,
 
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`** — Evaluation philosophy: information asymmetry, global process visibility. **Read first.**
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md`** — Directory structure, unified turn model, data flow
-- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`** — Manifest, data items, persona format, single-file datasets
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`** — Manifest, data items, persona format, `_mock_context` for environment data, single-file datasets
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/05-comparison.md`** — Pairwise comparison, position bias elimination

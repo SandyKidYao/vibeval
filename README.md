@@ -46,7 +46,7 @@ The `/vibeval` command detects your project state and guides you through the app
 - **In progress** — Verifies existing artifacts, continues from where you left off
 - **Complete** — Detects code changes for incremental updates, or lets you re-run, add tests, or modify designs
 
-Each phase (analyze → design → generate → run) pauses for your review before continuing. Every step produces editable intermediate files.
+Each phase (analyze → design → code → synthesize → run) pauses for your review before continuing. Every step produces editable intermediate files.
 
 ### Cross-Version Comparison
 
@@ -65,6 +65,15 @@ vibeval serve --open
 ```
 
 Launch a web dashboard to browse all features, view test results and traces, visualize trends across runs, and manage datasets and judge specs.
+
+### Data Validation
+
+```bash
+# Validate datasets and results against protocol format
+vibeval validate meeting_summary
+```
+
+Checks manifest structure, judge specs, data item fields, `_mock_context`, trace format, and cross-references before you run the judge.
 
 ### Other Commands
 

@@ -7,7 +7,6 @@ description: >
   whenever a vibeval phase completes and needs quality review.
 tools: Read, Glob, Grep
 model: sonnet
-skills: protocol
 ---
 
 You are the vibeval Evaluator — an independent reviewer that assesses the quality of each phase's output against the contract and protocol.

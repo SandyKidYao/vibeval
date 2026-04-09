@@ -1,26 +1,18 @@
 ---
-name: generate
-description: Generate vibeval test code and datasets from design — produces runnable test suite with zero vibeval dependency. Use when entering the generate phase of the /vibeval workflow.
+name: code
+description: Generate vibeval test code infrastructure from design — produces runnable test framework with zero vibeval dependency. Use when entering the code phase of the /vibeval workflow.
 ---
 
-# vibeval Generate Phase
+# vibeval Code Phase
 
-**Scope: AI capability evaluation only.** The generated test code and datasets must focus exclusively on exercising and evaluating AI behavior. Do NOT generate tests for deterministic logic (input validation, output parsing, routing, data formatting, CRUD operations) — those are out of vibeval's scope and should be covered by standard unit tests separately.
+**Scope: Test code infrastructure only.** This phase generates the test framework code that will run against data items produced by the synthesize phase. It does NOT generate synthetic data — that is handled separately by the synthesize phase with parallel Data Synthesizer agents.
 
-Read `tests/vibeval/{feature}/design/` and generate all test artifacts.
+Read `tests/vibeval/{feature}/design/` and generate test code artifacts.
 
 **Before starting, read:**
-- `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** Synthetic data must cover all requirements; traps should target known gaps.
-- `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — Evaluation philosophy governs how synthetic data and judge_specs should be crafted.
-- `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` — Dataset format.
+- `tests/vibeval/{feature}/contract.yaml` — The negotiated contract.
+- `tests/vibeval/{feature}/design/design.yaml` — The test design specifying datasets, judge specs, mock targets, and test structure.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md` — Result and trace format (the test code must produce conforming files).
-
-## Contract Alignment
-
-When generating synthetic data items:
-- Ensure data items exist for every contract requirement (check traceability from design)
-- For `known_gaps`, generate data items that specifically probe the gap (e.g., if multilingual is a gap, generate inputs in each required language)
-- Traps should be informed by `known_gaps` — these are where the AI is most likely to fail
 
 ## Steps
 
@@ -101,22 +93,7 @@ If `.vibeval.yml` does not exist at project root, create it.
       command: "python3 path/to/my_llm.py"
   ```
 
-### 3. Generate Datasets
-
-For each dataset in the design, create:
-
-```
-tests/vibeval/{feature}/datasets/{dataset_name}/
-├── manifest.yaml
-├── {item_id_1}.json
-└── {item_id_2}.json
-```
-
-**manifest.yaml**: name, description, version, tags, judge_specs from design. For format details, consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`.
-
-**Data items**: generate synthetic data applying the information asymmetry principle (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
-
-### 4. Generate Test Code
+### 3. Generate Test Code
 
 Generate test files in `tests/vibeval/{feature}/tests/` using the user's test framework.
 
@@ -126,7 +103,7 @@ Generate test files in `tests/vibeval/{feature}/tests/` using the user's test fr
 - All helpers (result collector, dataset loader) are generated inline using standard library only
 - For multi-turn user simulation, shell out to `vibeval simulate` CLI
 
-#### 4a. Generate VibevalResultCollector (inline helper)
+#### 3a. Generate VibevalResultCollector (inline helper)
 
 Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`.
 
@@ -149,13 +126,47 @@ collector.save(run_id="latest")
 
 This pattern is identical for single-turn (1 turn) and multi-turn (N turns).
 
-#### 4b. Generate Single-Turn Tests
+#### 3b. Generate Mock Infrastructure That Reads from _mock_context
+
+**Critical:** Mock responses must be loaded from `_mock_context` in each data item, NOT hardcoded in the test code. This is the key architectural decision that separates test code (infrastructure) from test data (datasets).
+
+Generate a helper that:
+1. Reads the data item's `_mock_context` field
+2. For each mock target, creates a mock function that returns responses from the `responses` list in order
+3. Applies these mocks using the test framework's mock mechanism
+
+Example pattern (Python/pytest):
+
+```python
+def apply_mock_context(item_data, collector, mocker):
+    """Apply _mock_context from a data item as mocks, with trace capture."""
+    mock_context = item_data.get("_mock_context", {})
+    applied_mocks = {}
+
+    for target, config in mock_context.items():
+        responses = iter(config["responses"])
+
+        def make_side_effect(target_name, resp_iter):
+            def side_effect(*args, **kwargs):
+                collector.step("tool_call", {"name": target_name, "args": str(args)[:200]})
+                response = next(resp_iter)
+                collector.step("tool_result", {"name": target_name, "result": str(response)[:200]})
+                return response
+            return side_effect
+
+        mock = mocker.patch(target, side_effect=make_side_effect(target, responses))
+        applied_mocks[target] = mock
+
+    return applied_mocks
+```
+
+#### 3c. Generate Single-Turn Tests
 
 For single-turn pipelines, generate a test function that:
 1. Receives data item from parameterized fixture
 2. Creates collector, calls `begin_turn` with input
-3. Defines tracked mock wrappers that call `collector.step(type, data)` around the mock
-4. Applies mocks, calls pipeline entry function
+3. Calls `apply_mock_context` to set up all mocks from the data item's `_mock_context`
+4. Calls pipeline entry function
 5. Calls `end_turn` with output, sets `collector.outputs`, saves
 
 Example structure (Python/pytest):
@@ -167,27 +178,22 @@ def test_summarize(meeting_item):
 
     collector.begin_turn({"content": f"Summarize meeting {item_data['meeting_id']}"})
 
-    llm_responses = iter(MOCK_RESPONSES[item_id])
-    def tracked_llm(prompt, system=""):
-        collector.step("llm_call", {"prompt_preview": prompt[:200]})
-        response = next(llm_responses)
-        collector.step("llm_output", {"content_preview": response[:200]})
-        return response
+    # Mocks come from data item, not hardcoded
+    applied = apply_mock_context(item_data, collector, mocker)
 
-    with patch("app.llm.chat", side_effect=tracked_llm):
-        result = summarize(item_data["meeting_id"])
+    result = summarize(item_data["meeting_id"])
 
     collector.end_turn({"content": result["summary"]})
     collector.outputs = {"summary": result["summary"]}
     collector.save(run_id="latest")
 ```
 
-#### 4c. Generate Multi-Turn Tests
+#### 3d. Generate Multi-Turn Tests
 
 For multi-turn pipelines, generate a test function that:
 1. Receives persona from parameterized fixture
 2. Sets up the bot with any necessary state
-3. Runs a for loop: send user message → bot responds → capture turn → get next user message
+3. Runs a for loop: send user message -> bot responds -> capture turn -> get next user message
 4. First round uses `opening_message`, subsequent rounds use `vibeval simulate` CLI
 5. Saves the complete result
 
@@ -248,7 +254,7 @@ def test_chatbot_safety(persona_item):
 
 If `use_vibeval_simulate: false` in design, the user handles user simulation themselves — just generate the loop structure without the `vibeval simulate` call.
 
-#### 4d. Generate Internal Step Capture (optional)
+#### 3e. Generate Internal Step Capture (optional)
 
 If the design specifies `trace_steps` for multi-turn tests, generate bot wrapper functions that capture internal processing steps. The wrapper manages a shared `turn_traces` list:
 
@@ -264,74 +270,38 @@ def make_tracked_bot(bot, collector):
 
 This wrapper is called between `begin_turn` and `end_turn`, so steps are automatically associated with the current turn.
 
-### 5. Review Design-Implementation Consistency
+### 4. Verify Protocol Compliance
 
-After generating all artifacts (datasets + test code), review them together to catch issues that are invisible when looking at the design or implementation in isolation. This step iterates until no new issues are found.
-
-#### 5a. Cross-Validation
-
-For each rule-type judge_spec, trace the `field` reference (e.g. `outputs.content`) into the generated test code and check:
-
-- **Type match**: does the value assigned to that field in the test code match what the rule expects? For example, `length_between` expects a single string, not a concatenation of all turns.
-- **Semantic match**: does the value represent what the designer intended? If the design says "single reply length <= 200 chars" but the implementation assigns a multi-turn concatenation to `outputs.content`, the rule will evaluate the wrong thing.
-- **Multi-turn attention**: for multi-turn tests, pay special attention to how `collector.outputs` fields are assembled — concatenation, last-turn-only, or per-turn list — and verify this matches the judge_spec's assumptions.
-
-#### 5b. Coverage Check
-
-For each judge_spec defined at the **dataset level** (applies to all items):
-
-- Enumerate every item in that dataset.
-- For each item, determine whether the spec's expected behavior is correct. For example, a `tool_called: generate_image` spec is wrong for an item whose intent is to reject image requests.
-- If a dataset-level spec conflicts with any item's expected behavior, move it to per-item `_judge_specs` with appropriate per-item values, or split into separate specs.
-
-#### 5c. Iterate
-
-If either check above finds issues:
-
-1. Fix the problem — this may involve modifying the design file (`design.yaml`), the generated datasets (manifest, data items), or the generated test code.
-2. Re-run both checks (5a and 5b) on the updated artifacts.
-3. Repeat until a full pass produces no new issues.
-
-Report all issues found and fixes applied to the user before proceeding.
-
-### 6. Verify Protocol Compliance
-
-Before finalizing, verify all generated artifacts against the protocol references:
-- Judge specs: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` (methods, scoring, required fields)
+Before finalizing, verify the generated test code against protocol references:
 - Result format: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md` (trace structure, file naming)
-- Dataset format: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` (manifest, data items)
 - No imports from `vibeval` package in test code
 - Multi-turn tests use `vibeval simulate` CLI (not Python API)
+- Mock infrastructure reads from `_mock_context` in data items (no hardcoded mock responses in test code)
+
+### 5. Validate Protocol Compliance via CLI
+
+After generating all test code, run `vibeval validate` to validate all existing artifacts (datasets, results) against the protocol:
+
+```bash
+vibeval validate {feature}
+```
+
+This validates manifest structure, judge_spec fields, data item format, `_mock_context` structure, trace format, and cross-references. If errors are reported, fix them before proceeding.
 
 ## Checkpoint
 
-After generation, present to the user:
+After code generation, present to the user:
 
 1. Files created:
    - `.vibeval.yml` (if new)
-   - `tests/vibeval/{feature}/datasets/{name}/` — manifest + N data items
    - `tests/vibeval/{feature}/tests/` — conftest + test files
 
-2. How to run:
-   ```bash
-   # Run tests to produce result files
-   pytest tests/vibeval/{feature}/tests/
-   # or: npx vitest tests/vibeval/{feature}/tests/
-   # or: go test ./tests/vibeval/{feature}/tests/
+2. Mock infrastructure summary:
+   - Which mock targets are wired up
+   - How `_mock_context` is loaded from data items
 
-   # Evaluate
-   vibeval judge {feature} latest
+3. LLM provider: confirm which provider is configured and how to switch if needed
 
-   # View results
-   vibeval summary {feature} latest
-   ```
+4. Ask: **"Test code generated. Shall I proceed to generate test datasets?"**
 
-3. For multi-turn: ensure `vibeval` CLI is installed and accessible in PATH
-
-4. Design-implementation consistency review results (Step 5) and any issues found and fixed
-
-5. LLM provider: confirm which provider is configured and how to switch if needed
-
-6. Ask: **"Generation complete. Shall I run the tests and evaluate?"**
-
-Wait for user confirmation before proceeding to the run phase.
+Wait for user confirmation before proceeding to the synthesize phase.

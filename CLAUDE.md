@@ -3,7 +3,7 @@
 ## Project Overview
 
 vibeval (Vibe Coding Eval) is an AI application evaluation framework consisting of two parts:
-- **vibeval CLI** (`src/vibeval/`) — Evaluation tools (judge, compare, simulate, diff, report, check, etc.)
+- **vibeval CLI** (`src/vibeval/`) — Evaluation tools (judge, compare, simulate, diff, validate, check, etc.)
 - **Claude Code Plugin** (`plugin/`) — VibeCoding workflow (unified `/vibeval` command)
 
 ## Core Principles
@@ -84,12 +84,14 @@ vibeval/
 │   ├── commands/vibeval.md # /vibeval — unified entry point (state detection + contract + routing)
 │   ├── agents/             # Subagents
 │   │   ├── evaluator.md    # Evaluator (reviews phase outputs against contract)
-│   │   └── consultant.md   # Consultant (suggests test scenarios and edge cases)
+│   │   ├── consultant.md   # Consultant (suggests test scenarios and edge cases)
+│   │   └── data-synthesizer.md  # Data Synthesizer (generates dataset items with _mock_context)
 │   ├── protocol/           # Data protocol references (Source of Truth)
 │   └── skills/             # Phase skills (loaded on demand by /vibeval)
 │       ├── analyze/        # Codebase analysis
 │       ├── design/         # Test plan design
-│       ├── generate/       # Code and dataset generation
+│       ├── code/           # Test code infrastructure (conftest, mocks, fixtures)
+│       ├── synthesize/     # Dataset synthesis (dispatches parallel Data Synthesizer agents)
 │       ├── run/            # Test execution and evaluation
 │       └── update/         # Incremental updates after code changes
 ├── tests/                 # vibeval's own tests

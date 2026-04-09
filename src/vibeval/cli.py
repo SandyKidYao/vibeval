@@ -88,6 +88,18 @@ def main() -> None:
                     "installation, authentication, and API access. "
                     "If using a custom LLM command, verify that it is configured and executable.")
 
+    p_validate = sub.add_parser("validate",
+        help="Validate datasets and results against the vibeval protocol",
+        description="Check all datasets, judge specs, data items, traces, and results for a feature "
+                    "against the vibeval protocol format. Catches structural issues that would cause "
+                    "judge/compare/summary to fail at runtime.\n\n"
+                    "Validates: manifest structure, judge_spec fields (rule names, args, scoring, "
+                    "anchors, calibrations), data item reserved fields (_id, _tags, _judge_specs, "
+                    "_mock_context), trace format (turns, steps), result files, and cross-references "
+                    "(values_from/expected_from pointing to existing item fields).\n\n"
+                    "Exit code 0 if no errors, 1 if errors found.")
+    p_validate.add_argument("feature", help="Feature name to validate")
+
     # --- Discovery ---
     sub.add_parser("features", help="List all feature directories under tests/vibeval/")
 
@@ -106,6 +118,8 @@ def main() -> None:
         cmd_serve(config, args.host, args.port, getattr(args, 'open', False))
     elif args.command == "check":
         cmd_check(config)
+    elif args.command == "validate":
+        cmd_validate(args.feature, config)
     elif args.command == "simulate":
         cmd_simulate(args.persona, args.history, config)
     elif args.command == "judge":
@@ -163,6 +177,34 @@ def cmd_check(config: Config) -> None:
     else:
         print(f"Error: unknown provider '{provider}'")
         sys.exit(1)
+
+
+def cmd_validate(feature: str, config: Config) -> None:
+    """Validate datasets and results against the vibeval protocol."""
+    from .validate import validate_feature
+
+    feature_dir = config.feature_dir(feature)
+    print(f"Validating: {feature}")
+    print(f"Path: {feature_dir}")
+
+    report = validate_feature(str(feature_dir))
+
+    if report.errors:
+        print(f"\nErrors ({len(report.errors)}):")
+        for issue in report.errors:
+            print(issue)
+
+    if report.warnings:
+        print(f"\nWarnings ({len(report.warnings)}):")
+        for issue in report.warnings:
+            print(issue)
+
+    print(f"\nResult: {len(report.errors)} errors, {len(report.warnings)} warnings")
+
+    if not report.ok:
+        sys.exit(1)
+    else:
+        print("All checks passed.")
 
 
 def cmd_simulate(persona_path: str, history_path: str | None, config: Config) -> None:

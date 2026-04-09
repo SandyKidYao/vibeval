@@ -11,7 +11,7 @@ This command is the unified entry point. It detects the current project state, n
 
 ## Step 0: Detect Project State and Decide Action
 
-Before doing anything, assess the current state and decide which phase to enter. If `$2` is explicitly provided (e.g., `analyze`, `design`, `generate`, `run`, `update`), skip detection and go to that phase directly (but still ensure a contract exists — see Step 1).
+Before doing anything, assess the current state and decide which phase to enter. If `$2` is explicitly provided (e.g., `analyze`, `design`, `code`, `synthesize`, `run`, `update`), skip detection and go to that phase directly (but still ensure a contract exists — see Step 1). For backwards compatibility, `generate` is accepted and routes to code followed by synthesize.
 
 ### 0a. Check if vibeval has been used in this project
 
@@ -38,7 +38,8 @@ Examine which artifacts exist for the feature:
 |---|---|---|
 | Nothing (new feature name) | FRESH_FEATURE | → Step 1: Negotiate Contract |
 | `analysis/` only | ANALYZED | Verify analysis, check contract, then → Design |
-| `analysis/` + `design/` | DESIGNED | Verify both, check contract, then → Generate |
+| `analysis/` + `design/` | DESIGNED | Verify both, check contract, then → Code |
+| `analysis/` + `design/` + `tests/` (no datasets) | CODE_GENERATED | Verify artifacts, then → Synthesize |
 | `analysis/` + `design/` + `datasets/` + `tests/` | COMPLETE | → Step 0c |
 
 **Verification**: When resuming from a partial state, quickly check whether the existing artifacts are still valid by comparing them against the current source code. If the source code has changed significantly since the artifacts were created, inform the user and suggest re-running from an earlier phase.
@@ -145,7 +146,8 @@ Delegate to vibeval-evaluator agent       │
 |---|---|---|
 | **Analyze** | `${CLAUDE_PLUGIN_ROOT}/skills/analyze/SKILL.md` | New project or feature; full redo |
 | **Design** | `${CLAUDE_PLUGIN_ROOT}/skills/design/SKILL.md` | After analysis; adding tests; modifying design |
-| **Generate** | `${CLAUDE_PLUGIN_ROOT}/skills/generate/SKILL.md` | After design is reviewed and confirmed |
+| **Code** | `${CLAUDE_PLUGIN_ROOT}/skills/code/SKILL.md` | After design is reviewed and confirmed — generates test infrastructure |
+| **Synthesize** | `${CLAUDE_PLUGIN_ROOT}/skills/synthesize/SKILL.md` | After test code exists — synthesizes datasets with parallel Data Synthesizer agents |
 | **Run** | `${CLAUDE_PLUGIN_ROOT}/skills/run/SKILL.md` | After generation; regression verification |
 | **Update** | `${CLAUDE_PLUGIN_ROOT}/skills/update/SKILL.md` | Code changed on a complete feature |
 
@@ -155,7 +157,7 @@ The `vibeval-consultant` agent is invoked at two points:
 
 1. **During Step 1 (Contract Negotiation)**: after gathering user requirements and code analysis, the Consultant suggests additional test scenarios and failure modes. User confirms which suggestions to adopt.
 
-2. **During Design phase**: after the initial design is produced (before Evaluator review), optionally delegate to the Consultant to suggest additional test scenarios that the design doesn't cover. This is especially useful when the design feels thin or covers only obvious cases. Present suggestions to the user for confirmation, then incorporate accepted ones into the design.
+2. **During Design phase (default)**: after the initial design is produced but before Evaluator review, delegate to the Consultant to review coverage gaps and suggest additional test scenarios the design doesn't cover. This step runs by default because the Consultant's perspective ("what hasn't been tested") is most valuable before generate phases invest effort. The user can skip it with explicit request, but it is not optional by default.
 
 The Consultant is advisory — it suggests, the user decides. Accepted suggestions become `source: suggested` requirements in the contract or additional items in the design.
 
@@ -188,8 +190,8 @@ After each phase (Analyze, Design, Generate) produces its output:
 
 After each phase's checkpoint, if the user confirms to continue, read the next phase's skill file and proceed:
 
-- Negotiate Contract → Analyze → Design → Generate → Run (full flow)
+- Negotiate Contract → Analyze → Design → Code → Synthesize → Run (full flow)
 - Update → Run (incremental flow)
-- Design (additive/edit) → Generate → Run (modification flow)
+- Design (additive/edit) → Code → Synthesize → Run (modification flow)
 
-The Run phase does NOT go through the Evaluator loop (it has its own diagnosis step built in). The Update phase triggers Evaluator review on the updated artifacts.
+The Code and Synthesize phases each include a `vibeval check` step for protocol compliance validation. The Run phase does NOT go through the Evaluator loop (it has its own diagnosis step built in). The Update phase triggers Evaluator review on the updated artifacts.

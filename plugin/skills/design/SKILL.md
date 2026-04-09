@@ -33,9 +33,15 @@ If entering this phase in **additive mode** (from a COMPLETE feature wanting to 
 
 If entering in **edit mode** (modifying existing design), read existing design and make targeted changes as discussed with the user.
 
-## Consultant Enrichment (optional)
+## Consultant Design Review (default)
 
-After producing the initial design, if the coverage feels thin or only covers obvious happy-path scenarios, the `/vibeval` command may delegate to the `vibeval-consultant` agent to suggest additional test scenarios. The Consultant analyzes the feature context and current design, then proposes scenarios the design doesn't cover (adversarial inputs, failure modes, edge cases). User-confirmed suggestions are incorporated as additional dataset items or new datasets, and any new requirements are added to the contract with `source: suggested`.
+After producing the initial design, the `/vibeval` command delegates to the `vibeval-consultant` agent to review coverage and suggest additional test scenarios. This is a **default step**, not optional — the Consultant's value is highest at this stage because it catches coverage gaps before code and data generation invest effort in the wrong direction.
+
+The Consultant analyzes the feature context and current design, then proposes scenarios the design doesn't cover (adversarial inputs, failure modes, edge cases, mock environment scenarios). The Consultant's perspective — "what hasn't been tested yet" — complements the Evaluator's perspective — "is what exists good enough."
+
+User-confirmed suggestions are incorporated as additional dataset items or new datasets, and any new requirements are added to the contract with `source: suggested`.
+
+The user can skip this step by explicitly requesting it (e.g., `--skip-consultant`), but it runs by default.
 
 ## Steps
 
@@ -73,13 +79,33 @@ Key design guidance (from philosophy):
 - First round uses `opening_message` from persona (no simulate needed)
 - Test code is responsible for managing bot state (conversation history, etc.)
 
-### 4. Design Mock LLM Responses (single-turn only)
+### 4. Design Mock Environment Context (single-turn only)
 
-- Responses should be realistic and exercise the judge specs
-- For rules with `values_from`, responses MUST include all expected values
-- For multi-call pipelines, design sequential responses in order
+The AI under test doesn't just receive user input — it also receives data from tools, APIs, and databases it calls during processing. These responses are **part of the test input** and must be designed with the same deliberation as user-facing data.
 
-Multi-turn tests do NOT mock LLM responses — they use the real bot with `vibeval simulate` providing user messages.
+For each mock point identified in the analysis (`ai_calls` and `external_deps`), design what each dependency returns **per data item**. This mock data lives in `_mock_context` within each data item (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` for format).
+
+**Design principles:**
+
+- **Mock responses shape AI behavior** — a search tool returning empty results, a database returning stale data, or an API returning an error are all distinct test scenarios. Design them deliberately.
+- **Traps can live in mock context** — if testing whether the AI detects contradictions between user input and tool output, embed that contradiction in `_mock_context` and document the trap in `description`.
+- **Per-item variation** — different items should exercise different environment conditions (success, empty, error, edge-case data, conflicting data).
+- **LLM mock responses** must be realistic and exercise the judge specs. For rules with `values_from`, responses MUST include all expected values. For multi-call pipelines, design sequential responses in order.
+- **Multi-call ordering** — for pipelines that call the same dependency multiple times, design the response sequence in order.
+
+In the design output, mock context is specified per item under `mock_context_summary` (the full `_mock_context` data is generated in the data synthesis phase):
+
+```yaml
+items:
+  - id: "search_empty"
+    description: "Search returns no results — tests graceful degradation"
+    data: { user_message: "Find info about quantum computing" }
+    mock_context_summary:
+      "myapp.services.search.query": "Returns empty results"
+      "myapp.services.llm.chat": "Responds acknowledging no search results found"
+```
+
+Multi-turn tests do NOT mock LLM responses — they use the real bot with `vibeval simulate` providing user messages. However, if multi-turn tests mock **non-LLM** dependencies (databases, APIs, tools), those mock responses should still be designed here.
 
 ## Output Format
 
@@ -104,6 +130,8 @@ datasets:
         tags: ["<tag>"]
         description: "<what this item tests — testing intent>"
         data: { ... }
+        mock_context_summary:  # What each mocked dependency returns for this item (design-level summary; full _mock_context generated in data synthesis)
+          "<mock_target>": "<brief description of mock response and why>"
 
     judge_specs:
       # See ${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md for complete field definitions
@@ -128,11 +156,10 @@ test_code:
       type: "<single-turn|multi-turn>"
       dataset: "<dataset_name>"
       pipeline_entry: "<module.function>"
-      # Single-turn: define mocks
-      mocks:
-        - target: "<mock_target>"
-          responses_per_item:
-            "<item_id>": ["<response1>", "<response2>"]
+      # Single-turn: mock targets (responses come from _mock_context in each data item)
+      mock_targets:
+        - "<mock_target_1>"
+        - "<mock_target_2>"
       # Multi-turn: define chat entry
       chat_entry: "<module.function>"
       use_vibeval_simulate: true
