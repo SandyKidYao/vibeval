@@ -10,7 +10,7 @@ vibeval (Vibe Coding Eval) is an AI application evaluation framework consisting 
 
 ### 1. Protocol First
 
-The protocol documents under `plugin/skills/protocol/references/` are the project's Source of Truth. All plugin commands, CLI code, and documentation must follow and adhere to the protocol. When any content conflicts with the protocol, the protocol takes precedence. When writing documentation or commands, avoid duplicating definitions already present in the protocol; reference the protocol files instead.
+The protocol documents under `plugin/protocol/references/` are the project's Source of Truth. All plugin commands, CLI code, and documentation must follow and adhere to the protocol. When any content conflicts with the protocol, the protocol takes precedence. When writing documentation or commands, avoid duplicating definitions already present in the protocol; reference the protocol files instead.
 
 Protocol files:
 - `00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
@@ -29,11 +29,7 @@ All designs must avoid language coupling. vibeval CLI provides generic functiona
 
 Every CLI command must maintain a complete, up-to-date `--help` description (including purpose, parameter descriptions, and usage examples). Plugin command documentation and SKILL.md should not duplicate CLI parameter details; instead, they should direct users to check via `vibeval --help` / `vibeval <command> --help`. This ensures the CLI and documentation never fall out of sync.
 
-### 4. Separating Test Directories
-
-The `tests/` directory contains unit tests and integration tests for the vibeval CLI tools and code itself. Projects under `examples/` (such as `meeting_app/`) are standalone example applications with their own tests (under `examples/meeting_app/tests/vibeval/`), demonstrating the complete workflow of using vibeval. Do not confuse the two.
-
-### 5. English as Primary Language
+### 4. English as Primary Language
 
 All code, documentation, commit messages, comments, and CLI output in this project must be written in English.
 
@@ -44,14 +40,6 @@ All code, documentation, commit messages, comments, and CLI output in this proje
 ```bash
 # vibeval's own tests
 python -m pytest tests/ -v
-
-# Example application tests (run independently)
-cd examples/meeting_app/tests/vibeval/meeting_summary/tests
-python -m pytest test_summarizer.py -v
-
-# Example application judge
-cd examples/meeting_app
-vibeval judge meeting_summary latest
 ```
 
 ### Modifying the Protocol
@@ -59,7 +47,7 @@ vibeval judge meeting_summary latest
 After modifying protocol files, check whether the following need to be updated accordingly:
 - Code implementation in `src/vibeval/` (rules.py, llm.py, judge.py, compare.py, result.py)
 - Command documentation in `plugin/commands/` (should reference the protocol rather than duplicate content)
-- `plugin/skills/protocol/SKILL.md` (Quick Reference summary)
+- `plugin/protocol/README.md` (Quick Reference summary)
 - CLI `--help` descriptions
 
 ### Modifying the CLI
@@ -97,14 +85,13 @@ vibeval/
 │   ├── agents/             # Subagents
 │   │   ├── evaluator.md    # Evaluator (reviews phase outputs against contract)
 │   │   └── consultant.md   # Consultant (suggests test scenarios and edge cases)
+│   ├── protocol/           # Data protocol references (Source of Truth)
 │   └── skills/             # Phase skills (loaded on demand by /vibeval)
 │       ├── analyze/        # Codebase analysis
 │       ├── design/         # Test plan design
 │       ├── generate/       # Code and dataset generation
 │       ├── run/            # Test execution and evaluation
-│       ├── update/         # Incremental updates after code changes
-│       └── protocol/       # Data protocol (Source of Truth)
-├── examples/              # Standalone example applications
+│       └── update/         # Incremental updates after code changes
 ├── tests/                 # vibeval's own tests
 ├── CLAUDE.md
 ├── README.md

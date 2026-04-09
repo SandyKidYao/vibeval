@@ -1,8 +1,3 @@
----
-name: protocol
-description: This skill should be used when the user works with vibeval test files, mentions "vibeval", "judge_specs", "trace", "turns", edits files under "tests/vibeval/", or asks about AI application testing data formats. Provides the vibeval data protocol specification and evaluation philosophy.
----
-
 # vibeval Data Protocol
 
 vibeval (Vibe Coding Eval) is a protocol-driven AI application testing framework. All vibeval commands and workflows MUST conform to this protocol.
@@ -14,7 +9,7 @@ LLM-as-Judge works NOT because the judge is smarter, but because vibeval gives i
 1. **Information asymmetry** — The judge knows test intent, trap design, expected behavior. The tested AI only sees input.
 2. **Global process visibility** — The judge reviews structured traces step-by-step, free from context window limits.
 
-**Always consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` first when designing tests, data, and judge specs.**
+**Always consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` first when designing tests, data, and judge specs.**
 
 ## Quick Reference (Summary)
 
@@ -40,10 +35,10 @@ vibeval <command> --help
 
 All foundational definitions live here. Commands and other docs reference these, not the other way around.
 
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md`** — Evaluation philosophy: information asymmetry, global process visibility. **Read first.**
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md`** — Directory structure, unified turn model, data flow
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md`** — Manifest, data items, persona format, single-file datasets
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/05-comparison.md`** — Pairwise comparison, position bias elimination
-- **`${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/06-contract.md`** — Contract format: requirements, known gaps, quality criteria, feedback log
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`** — Evaluation philosophy: information asymmetry, global process visibility. **Read first.**
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md`** — Directory structure, unified turn model, data flow
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`** — Manifest, data items, persona format, single-file datasets
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md`** — Rule types, LLM scoring, target options, all field definitions
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/05-comparison.md`** — Pairwise comparison, position bias elimination
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`** — Contract format: requirements, known gaps, quality criteria, feedback log

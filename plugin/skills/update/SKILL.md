@@ -5,6 +5,8 @@ description: Incrementally update vibeval test artifacts after code changes — 
 
 # vibeval Update Phase
 
+**Scope: AI capability evaluation only.** When updating test artifacts, focus on changes that affect AI behavior (prompt changes, model switches, AI pipeline restructuring). Changes to deterministic logic (routing, validation, formatting) do not require vibeval test updates.
+
 Detect code changes and incrementally update test artifacts. This phase preserves existing tests and adds/modifies only what's necessary.
 
 ## Prerequisites

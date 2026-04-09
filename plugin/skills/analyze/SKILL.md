@@ -5,12 +5,14 @@ description: Analyze codebase to identify AI call points, data flow, mock points
 
 # vibeval Analyze Phase
 
+**Scope: AI capability evaluation only.** vibeval exists to evaluate the non-deterministic, AI-powered parts of an application — LLM calls, AI agent behaviors, prompt-driven pipelines. Deterministic logic (routing, validation, parsing, data transformation, CRUD operations) should be tested with standard unit/integration tests, NOT with vibeval. During analysis, identify only the AI-powered pipelines and exclude everything else.
+
 Perform a thorough analysis of the codebase to prepare for test generation.
 
 **Before starting, read:**
 - `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** All analysis must address the requirements and known gaps defined here.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md` — Directory structure, unified turn model
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` — Directory structure, unified turn model
 
 Produce analysis artifacts in `tests/vibeval/{feature}/analysis/`.
 
@@ -35,7 +37,7 @@ For each call point, record: file path, function name, purpose, input/output des
 
 ### 2. Determine Test Mode
 
-All vibeval tests are N-turn interactions; single-turn is N=1 (see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/01-overview.md` for the unified model).
+All vibeval tests are N-turn interactions; single-turn is N=1 (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` for the unified model).
 
 Classify each pipeline:
 - **Single-turn** (N=1): one input → one output (summarization, classification, extraction, etc.)

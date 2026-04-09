@@ -65,7 +65,7 @@ Offer these options:
 
 ## Step 1: Negotiate Contract
 
-The contract is the shared standard for all phases. For the complete format specification, see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/06-contract.md`.
+The contract is the shared standard for all phases. For the complete format specification, see `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
 
 ### For a new feature (no contract exists)
 

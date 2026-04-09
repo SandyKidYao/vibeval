@@ -5,13 +5,15 @@ description: Generate vibeval test code and datasets from design — produces ru
 
 # vibeval Generate Phase
 
+**Scope: AI capability evaluation only.** The generated test code and datasets must focus exclusively on exercising and evaluating AI behavior. Do NOT generate tests for deterministic logic (input validation, output parsing, routing, data formatting, CRUD operations) — those are out of vibeval's scope and should be covered by standard unit tests separately.
+
 Read `tests/vibeval/{feature}/design/` and generate all test artifacts.
 
 **Before starting, read:**
 - `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** Synthetic data must cover all requirements; traps should target known gaps.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — Evaluation philosophy governs how synthetic data and judge_specs should be crafted.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md` — Dataset format.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md` — Result and trace format (the test code must produce conforming files).
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — Evaluation philosophy governs how synthetic data and judge_specs should be crafted.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` — Dataset format.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md` — Result and trace format (the test code must produce conforming files).
 
 ## Contract Alignment
 
@@ -110,9 +112,9 @@ tests/vibeval/{feature}/datasets/{dataset_name}/
 └── {item_id_2}.json
 ```
 
-**manifest.yaml**: name, description, version, tags, judge_specs from design. For format details, consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md`.
+**manifest.yaml**: name, description, version, tags, judge_specs from design. For format details, consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`.
 
-**Data items**: generate synthetic data applying the information asymmetry principle (see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
+**Data items**: generate synthetic data applying the information asymmetry principle (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`). Each item should have clear testing intent with deliberate traps that are visible only to the judge, never to the tested AI.
 
 ### 4. Generate Test Code
 
@@ -126,7 +128,7 @@ Generate test files in `tests/vibeval/{feature}/tests/` using the user's test fr
 
 #### 4a. Generate VibevalResultCollector (inline helper)
 
-Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md`.
+Generate a `VibevalResultCollector` class in conftest/setup using only standard library (json, time, pathlib, subprocess). It must produce result files conforming to the trace protocol defined in `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`.
 
 The collector API:
 
@@ -295,9 +297,9 @@ Report all issues found and fixes applied to the user before proceeding.
 ### 6. Verify Protocol Compliance
 
 Before finalizing, verify all generated artifacts against the protocol references:
-- Judge specs: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md` (methods, scoring, required fields)
-- Result format: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md` (trace structure, file naming)
-- Dataset format: validate against `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md` (manifest, data items)
+- Judge specs: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` (methods, scoring, required fields)
+- Result format: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md` (trace structure, file naming)
+- Dataset format: validate against `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` (manifest, data items)
 - No imports from `vibeval` package in test code
 - Multi-turn tests use `vibeval simulate` CLI (not Python API)
 

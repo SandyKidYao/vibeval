@@ -5,14 +5,16 @@ description: Design vibeval test plan — define datasets, judge specs, and test
 
 # vibeval Design Phase
 
+**Scope: AI capability evaluation only.** All datasets, judge specs, and test structures designed in this phase must target the evaluation of AI behavior — how well the AI understands, reasons, and responds. Do NOT design tests for deterministic logic surrounding the AI calls (input validation, output parsing, routing, data formatting). Those belong in standard unit tests, not vibeval.
+
 Read `tests/vibeval/{feature}/analysis/` and design a complete test plan.
 Produce design artifacts in `tests/vibeval/{feature}/design/`.
 
 **Before starting, read:**
 - `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** Every requirement must have corresponding test coverage. Quality criteria define the bar for this design.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md` — **Must read first.** The three core principles (information asymmetry + global process visibility + contract) govern all design decisions.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md` — Dataset format, data items, persona format.
-- `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md` — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — **Must read first.** The three core principles (information asymmetry + global process visibility + contract) govern all design decisions.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` — Dataset format, data items, persona format.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
 
 ## Contract-Driven Design
 
@@ -41,27 +43,27 @@ After producing the initial design, if the coverage feels thin or only covers ob
 
 For each pipeline in the analysis, design one or more datasets.
 
-For data item format (single-turn items and multi-turn personas), consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/02-dataset.md`.
+For data item format (single-turn items and multi-turn personas), consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md`.
 
-Each data item should have a clear testing intent — what specific capability or failure mode is being tested. Apply the information asymmetry principle from `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/00-philosophy.md`: embed deliberate traps and edge cases that will be visible only to the judge.
+Each data item should have a clear testing intent — what specific capability or failure mode is being tested. Apply the information asymmetry principle from `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`: embed deliberate traps and edge cases that will be visible only to the judge.
 
 ### 2. Design Judge Specs
 
-Consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md` for the complete list of available rules, LLM scoring modes (binary/five-point), `target` options for process evaluation, and all required fields.
+Consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` for the complete list of available rules, LLM scoring modes (binary/five-point), `target` options for process evaluation, and all required fields.
 
 Key design guidance (from philosophy):
 
 - `test_intent` and `trap_design` encode the designer's insider knowledge — what the test is designed to catch, what traps are embedded in the data. These are REQUIRED for LLM specs.
 - `anchors` must describe what good/bad looks like **for this specific test scenario**, not generic quality statements.
 - `calibrations` must show concrete examples from the test scenario that reveal the pitfalls the tested AI might fall into.
-- Use `target` to decompose evaluation: one spec for final output, others for specific turns or step types. Consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md` for target syntax.
+- Use `target` to decompose evaluation: one spec for final output, others for specific turns or step types. Consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` for target syntax.
 - One JudgeSpec per evaluation dimension. Do not combine multiple criteria.
 
 ### 3. Design Test Structure
 
 **For single-turn tests:**
 - Mock external deps using the test framework's mock mechanism
-- Wrap mocks to capture trace steps (for trace format, consult `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/04-result.md`)
+- Wrap mocks to capture trace steps (for trace format, consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`)
 - Each test: 1 turn with input → steps → output
 
 **For multi-turn tests:**
@@ -104,7 +106,7 @@ datasets:
         data: { ... }
 
     judge_specs:
-      # See ${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/03-judge-spec.md for complete field definitions
+      # See ${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md for complete field definitions
       - method: rule
         rule: "<rule_name>"
         args: { ... }

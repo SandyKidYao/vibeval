@@ -151,7 +151,7 @@ vibeval solves this through the **contract** (`contract.yaml`): a negotiated agr
 
     The contract is not static. User feedback at each phase checkpoint is recorded in `feedback_log` and may trigger updates to requirements, quality criteria, or known gaps. This continuous refinement ensures the test suite stays aligned with evolving user expectations.
 
-For the complete contract format, see `${CLAUDE_PLUGIN_ROOT}/skills/protocol/references/06-contract.md`.
+For the complete contract format, see `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
 
 ## Summary: vibeval's Three Structural Advantages
 
