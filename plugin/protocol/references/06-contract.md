@@ -107,7 +107,7 @@ Each requirement describes a behavior the feature should exhibit. The `source` f
 | `user` | Stated by the user unprompted during dialogue; not visible in code | "Must support Chinese, English, and Japanese" |
 | `code` | Identified through code analysis (prompts, API calls, logic) | "Summarizes meeting transcripts into bullet points" |
 | `inferred` | Inferred from code patterns, confirmed by user | "Prompt says 'be concise' → responses should be under 200 words" |
-| `brainstorm` | Surfaced through the contract skill's Socratic dialogue (seeded by Consultant research), confirmed by user | "Should handle prompt injection attempts without leaking system prompt" |
+| `brainstorm` | Surfaced through Consultant-seeded dialogue with the user — either the contract skill's Socratic dialogue or the design skill's coverage review — and confirmed by the user | "Should handle prompt injection attempts without leaking system prompt" |
 | `suggested` | DEPRECATED — produced by the old Consultant-as-advisor flow. Existing contracts keep this value; new contracts should use `brainstorm`. | — |
 
 Requirements with `source: user` and `source: brainstorm` are the most valuable — they represent information that pure code analysis would miss entirely. The contract skill actively elicits these through Socratic dialogue, using a background brief from the Consultant Agent as seed questions.
