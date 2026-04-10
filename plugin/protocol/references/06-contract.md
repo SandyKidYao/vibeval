@@ -47,16 +47,24 @@ feature: "<feature_name>"
 created: "<YYYY-MM-DD>"
 updated: "<YYYY-MM-DD>"
 
+# Rigor level: controls workflow depth for downstream phases.
+# Inferred by the contract skill during negotiation; user may override.
+#   light    — small features / no external docs; compressed loops, only high-severity issues reported
+#   standard — default; current behavior (evaluator max 3 iterations, full phase sequence)
+#   strict   — high-stakes features; extended dialogue, higher evaluator iteration cap
+rigor: "<light|standard|strict>"
+
 # Requirements: what the feature should do
-# These come from four sources:
-#   user      — stated by the user, not derivable from code
-#   code      — identified through code analysis
-#   inferred  — inferred from prompts/config, confirmed by user
-#   suggested — proposed by the Consultant Agent, confirmed by user
+# These come from five sources:
+#   user       — stated by the user unprompted
+#   code       — identified through code analysis (prompts, API calls, logic)
+#   inferred   — inferred from code patterns, confirmed by user
+#   brainstorm — surfaced during the contract skill's Socratic dialogue, confirmed by user
+#   suggested  — DEPRECATED: was the Consultant-as-advisor output. New negotiations should use `brainstorm`.
 requirements:
   - id: "<req-N>"
     description: "<what the feature should do>"
-    source: "<user|code|inferred|suggested>"
+    source: "<user|code|inferred|brainstorm>"
 
 # Known gaps: where code falls short of requirements
 # These are the highest-priority areas for test coverage
@@ -96,12 +104,13 @@ Each requirement describes a behavior the feature should exhibit. The `source` f
 
 | Source | Meaning | Example |
 |---|---|---|
-| `user` | Stated by the user during negotiation; not visible in code | "Must support Chinese, English, and Japanese" |
+| `user` | Stated by the user unprompted during dialogue; not visible in code | "Must support Chinese, English, and Japanese" |
 | `code` | Identified through code analysis (prompts, API calls, logic) | "Summarizes meeting transcripts into bullet points" |
 | `inferred` | Inferred from code patterns, confirmed by user | "Prompt says 'be concise' → responses should be under 200 words" |
-| `suggested` | Proposed by the Consultant Agent based on testing expertise, confirmed by user | "Should handle prompt injection attempts without leaking system prompt" |
+| `brainstorm` | Surfaced through the contract skill's Socratic dialogue (seeded by Consultant research), confirmed by user | "Should handle prompt injection attempts without leaking system prompt" |
+| `suggested` | DEPRECATED — produced by the old Consultant-as-advisor flow. Existing contracts keep this value; new contracts should use `brainstorm`. | — |
 
-Requirements with `source: user` and `source: suggested` are the most valuable — they represent information that pure code analysis would miss entirely. The negotiation phase should actively elicit user requirements, and the Consultant Agent should proactively suggest testing scenarios based on common AI application failure modes.
+Requirements with `source: user` and `source: brainstorm` are the most valuable — they represent information that pure code analysis would miss entirely. The contract skill actively elicits these through Socratic dialogue, using a background brief from the Consultant Agent as seed questions.
 
 ### known_gaps
 
@@ -133,17 +142,29 @@ The feedback log serves two purposes:
 1. **Accountability**: the Evaluator can check that past feedback has been addressed
 2. **Learning**: patterns in feedback reveal systematic issues in the workflow
 
+### rigor
+
+The `rigor` field controls how thoroughly downstream phases execute. It is inferred by the contract skill based on feature size, external documentation availability, and user input; the user can override at any point.
+
+| Level | When it applies | Downstream effects |
+|---|---|---|
+| `light` | Small features (<200 LOC code footprint), no external PRD, exploratory work | Contract dialogue compressed to ~3 seed questions; evaluator loops capped at 1 iteration; evaluator only surfaces high-severity issues; code and synthesize phases may be merged in future plans |
+| `standard` | Default | Current behavior — evaluator max 3 iterations, full phase sequence, all severity levels reported |
+| `strict` | High-stakes features with rich external context (PRD, historical bad cases, compliance requirements) | Extended dialogue until convergence; evaluator iteration cap raised to 5; all phases run independently; no shortcuts |
+
+The contract skill writes the inferred level into `rigor` and explains it to the user for confirmation. Phase skills that honor `rigor` will be updated in a follow-up plan (P1).
+
 ## Contract Lifecycle
 
 ### Creation
 
 The contract is created during the `/vibeval` command's Step 0 (state detection), specifically during the negotiation phase:
 
-1. Agent analyzes code and presents initial findings
-2. Agent asks: "What requirements exist beyond what the code shows?"
-3. User provides additional context (multilingual support, safety rules, etc.)
-4. Agent drafts contract, user reviews and confirms
-5. Contract is saved; all subsequent phases reference it
+1. The `/vibeval` command delegates to the `contract` skill (see `plugin/skills/contract/SKILL.md`).
+2. The skill dispatches the `vibeval-consultant` agent as a background researcher; the researcher writes a brief to `tests/vibeval/{feature}/_research.md`.
+3. The skill presents a brief anchor of findings to the user and runs a Socratic dialogue (one question per turn), using the researcher's seed questions and adapting based on user answers.
+4. The skill drafts `contract.yaml` with per-requirement `source` attribution and infers a `rigor` level.
+5. User approves; contract is saved; `_research.md` is deleted; all subsequent phases reference the contract.
 
 ### Evolution
 
