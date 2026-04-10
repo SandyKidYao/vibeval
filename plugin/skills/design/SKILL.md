@@ -35,13 +35,31 @@ If entering in **edit mode** (modifying existing design), read existing design a
 
 ## Consultant Design Review (default)
 
-After producing the initial design, the `/vibeval` command delegates to the `vibeval-consultant` agent to review coverage and suggest additional test scenarios. This is a **default step**, not optional — the Consultant's value is highest at this stage because it catches coverage gaps before code and data generation invest effort in the wrong direction.
+After producing the initial design, dispatch the `vibeval-consultant` agent to produce a **coverage-focused research brief**. This is a **default step**, not optional — the Consultant's value is highest at this stage because it catches coverage gaps before code and data generation invest effort in the wrong direction.
 
-The Consultant analyzes the feature context and current design, then proposes scenarios the design doesn't cover (adversarial inputs, failure modes, edge cases, mock environment scenarios). The Consultant's perspective — "what hasn't been tested yet" — complements the Evaluator's perspective — "is what exists good enough."
+Dispatch context:
+- Feature name and contract path
+- Current `design.yaml` (draft)
+- Target output path: `tests/vibeval/{feature}/_design_research.md`
 
-User-confirmed suggestions are incorporated as additional dataset items or new datasets, and any new requirements are added to the contract with `source: suggested`.
+The Consultant reads the design and the feature context, then writes a brief containing:
+- Coverage gaps — requirements or failure modes not addressed by any dataset/judge spec
+- Missing test dimensions — e.g., adversarial inputs, mock environment failures, multi-turn state issues
+- Seed questions the main agent should ask the user to decide whether each gap matters
 
-The user can skip this step by explicitly requesting it (e.g., `--skip-consultant`), but it runs by default.
+**Main agent behavior after receiving the brief:**
+
+1. Read `_design_research.md`.
+2. For each high-priority gap, ask the user a targeted question (one at a time, not a list):
+   > "The design doesn't currently cover <X>. Is that intentional, or should I add a dataset/spec for it?"
+3. For each gap the user confirms is important:
+   - If it implies a new requirement, add it to the contract with `source: brainstorm`.
+   - Add corresponding items to the relevant dataset or create a new dataset.
+4. Delete `_design_research.md` when done.
+
+The Consultant never talks to the user directly. The main agent owns the dialogue.
+
+The user can skip this step by explicitly requesting it, but it runs by default.
 
 ## Steps
 
