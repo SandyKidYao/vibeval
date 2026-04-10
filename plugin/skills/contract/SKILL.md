@@ -153,7 +153,7 @@ If `tests/vibeval/{feature}/contract.yaml` already exists:
    - Summarize the existing contract: "Here's what we agreed on last time: <brief summary>."
    - Ask: "What's changed since then? Any new requirements, feedback from users, or priorities to adjust?"
 4. Apply the user's changes:
-   - New requirements go in with `source: brainstorm` (or `user` if unprompted).
+   - New requirements go in with `source: user` if the user raised them unprompted, or `source: inferred` if you surfaced them (e.g., from noticing code changes during your lightweight re-scan) and the user confirmed. Do NOT use `source: brainstorm` during updates — that source requires a fresh Consultant research pass, which updates skip.
    - Updated quality criteria or user emphasis update the relevant fields.
    - Bump `updated:` to today's date.
    - Append an entry to `feedback_log` recording this update round.
