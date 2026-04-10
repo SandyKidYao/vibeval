@@ -66,49 +66,28 @@ Offer these options:
 
 ## Step 1: Negotiate Contract
 
-The contract is the shared standard for all phases. For the complete format specification, see `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
+The contract is the shared standard for all phases. Contract negotiation is delegated to the `contract` skill, which runs a dialogue-driven workflow: the `vibeval-consultant` agent prepares a background research brief, and the main agent then runs a Socratic dialogue with the user using the brief as seed questions.
+
+For the complete contract format specification, see `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
 
 ### For a new feature (no contract exists)
 
-1. **Present initial findings** from code analysis:
-   - What the feature does (from code)
-   - What the prompts/config suggest (inferred requirements)
-   - Potential edge cases and failure modes identified
+Read `${CLAUDE_PLUGIN_ROOT}/skills/contract/SKILL.md` and follow it end-to-end. The skill will:
 
-2. **Actively elicit user requirements beyond code**:
-   > "What should this feature do that isn't reflected in the code? For example:
-   > - Behavioral expectations (language support, tone, length limits)
-   > - Safety or compliance constraints
-   > - Edge cases you've encountered in real usage
-   > - Quality standards for the output"
-
-3. **Delegate to the `vibeval-consultant` agent** for proactive suggestions:
-   - Pass the feature context (code structure, prompts, identified AI calls) and user-stated requirements
-   - The Consultant returns suggested test scenarios with severity ratings and proposed requirements
-   - Present the Consultant's suggestions to the user:
-     > "Based on your feature's code and requirements, here are additional testing scenarios you may want to consider: ..."
-   - For each suggestion the user confirms, add it to requirements with `source: suggested`
-   - User can accept all, accept some, or skip entirely — the Consultant advises, the user decides
-
-4. **Draft the contract** with:
-   - `requirements`: combine code-derived, inferred, user-stated, and consultant-suggested requirements
-   - `known_gaps`: where code falls short of stated requirements
-   - `quality_criteria`: defaults + any user-specific emphasis
-
-5. **Present the draft** for user review and confirmation
-
-6. **Save** to `tests/vibeval/{feature}/contract.yaml`
+1. Dispatch `vibeval-consultant` as a background researcher to produce `_research.md`.
+2. Present a short anchor of findings to the user.
+3. Run a Socratic dialogue (one question at a time) seeded by the brief.
+4. Draft the contract with per-requirement `source` attribution (including the new `brainstorm` source).
+5. Infer a `rigor` level (`light` / `standard` / `strict`) and confirm with the user.
+6. Save `tests/vibeval/{feature}/contract.yaml` and delete the temporary research brief.
 
 ### For an existing feature (contract already exists)
 
-1. Read the existing contract
-2. Ask: "Would you like to update the contract? Any new requirements, changed priorities, or feedback?"
-3. If yes, update the relevant sections and save
-4. If no, proceed with the existing contract
+Read the contract skill and use the "Updating an existing contract" section. No fresh research is needed unless code has changed substantially.
 
 ### Contract is required
 
-Every feature MUST have a contract before entering any phase. If a phase is entered without a contract (e.g., resuming from a partial state), create one first by negotiating with the user.
+Every feature MUST have a contract before entering any phase. If a phase is entered without a contract (e.g., resuming from a partial state), invoke the contract skill first.
 
 ---
 
@@ -153,13 +132,15 @@ Delegate to vibeval-evaluator agent       │
 
 ### Consultant integration
 
-The `vibeval-consultant` agent is invoked at two points:
+The `vibeval-consultant` agent's role is **background researcher**, not user-facing advisor. It writes a `_research.md` brief for the main agent; the main agent uses it to seed dialogue or coverage checks with the user.
 
-1. **During Step 1 (Contract Negotiation)**: after gathering user requirements and code analysis, the Consultant suggests additional test scenarios and failure modes. User confirms which suggestions to adopt.
+It is invoked at two points:
 
-2. **During Design phase (default)**: after the initial design is produced but before Evaluator review, delegate to the Consultant to review coverage gaps and suggest additional test scenarios the design doesn't cover. This step runs by default because the Consultant's perspective ("what hasn't been tested") is most valuable before generate phases invest effort. The user can skip it with explicit request, but it is not optional by default.
+1. **Step 1 (Contract Negotiation)** — via the `contract` skill, as Phase A (Research). The main agent runs a Socratic dialogue using the brief as seed questions.
 
-The Consultant is advisory — it suggests, the user decides. Accepted suggestions become `source: suggested` requirements in the contract or additional items in the design.
+2. **Design phase** — after the initial design is produced, the `vibeval-consultant` is dispatched with the current design as context. It writes a coverage-focused brief. The main agent reads the brief and surfaces any high-priority coverage gaps to the user as targeted questions (not as a suggestions list). See `${CLAUDE_PLUGIN_ROOT}/skills/design/SKILL.md` for details.
+
+The Consultant never communicates directly with the user. The main agent owns the dialogue.
 
 ### Evaluator integration
 
