@@ -145,7 +145,7 @@ vibeval solves this through the **contract** (`contract.yaml`): a negotiated agr
 
 10. **Proactively expand testing coverage with the Consultant**
 
-    The user may not be a testing specialist and may not anticipate common AI failure modes (hallucination, prompt injection, context forgetting, format degradation, etc.). The Consultant Agent brings testing expertise to the negotiation — it analyzes the feature and suggests scenarios the user hasn't considered. Accepted suggestions become `source: suggested` requirements in the contract, ensuring they are traced through all subsequent phases.
+    The user may not be a testing specialist and may not anticipate common AI failure modes (hallucination, prompt injection, context forgetting, format degradation, etc.). The Consultant Agent brings testing expertise to the negotiation as a **background researcher**: it analyzes the feature and produces a research brief (`_research.md`) for the main agent, listing seed questions and likely failure modes specific to the feature. The main agent then runs a Socratic dialogue with the user using the brief as seed material. Requirements surfaced and confirmed during that dialogue are recorded with `source: brainstorm`, ensuring they are traced through all subsequent phases. The Consultant never communicates directly with the user.
 
 11. **Evolve the contract through feedback**
 
