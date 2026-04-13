@@ -112,6 +112,8 @@ Each requirement describes a behavior the feature should exhibit. The `source` f
 
 Requirements with `source: user` and `source: brainstorm` are the most valuable — they represent information that pure code analysis would miss entirely. The contract skill actively elicits these through Socratic dialogue, using a background brief from the Consultant Agent as seed questions.
 
+**Agent features.** Tool-related behavioral requirements (e.g., "the agent must call the search tool before answering factual questions") are recorded here as ordinary requirements, typically with `source: user` or `source: brainstorm`. The contract format is unchanged by Agent-tool validation. When the design phase plans per-tool coverage, such requirements surface as additional test points for the relevant tool's positive-selection or sequence dimensions. See `07-agent-tools.md` for how contract requirements map to per-tool coverage.
+
 ### known_gaps
 
 Each gap links a requirement to a deficiency in the current implementation. Gaps are high-priority test targets because they represent areas where the AI is most likely to fail:
