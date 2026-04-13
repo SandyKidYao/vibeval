@@ -53,14 +53,14 @@ Operational guidance for the extraction itself:
 
 For each entry produced in Step 2, run a static design audit and populate `design_risks[]` and `siblings_to_watch[]`. The finding taxonomy, severity semantics, and category definitions live in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — the skill does not restate them.
 
-Operational checks to run per tool (each check maps to a category named in the protocol):
+Operational checks to run per tool. Each check is an audit action; the criterion that determines whether a finding is recorded under the named category is defined in the protocol file. Consult `07-agent-tools.md` for the trigger conditions.
 
-1. **Read the description in isolation.** Could the LLM pick this tool without seeing the rest of the catalogue? If it depends on process-of-elimination, record a `description_ambiguity` finding.
-2. **Walk the description's parameter mentions against `input_schema`.** If the description implies a parameter that is absent, misnamed, or under-typed in the schema, record a `schema_gap` finding.
-3. **Pairwise compare descriptions across the inventory.** When two tools could plausibly satisfy the same user query, record mutual `overlap` findings (one per tool, each referencing the other) and populate `siblings_to_watch` on both entries.
-4. **Trace how the LLM would consume the output.** If the output shape is unstructured or under-documented for downstream use, record an `output_opacity` finding.
-5. **(Sub-agents only) Read the exposed description for prompt bleed.** If internal implementation details surface in the description in a way that could bias delegation, record a `subagent_prompt_leak` finding.
-6. **Compare `responsibility` against the actual code behavior.** If they diverge, record a `responsibility_drift` finding.
+1. **Read the description in isolation.** Category: `description_ambiguity`.
+2. **Walk every parameter the description implies against `input_schema`.** Category: `schema_gap`.
+3. **Pairwise compare descriptions across the inventory.** When two tools could plausibly satisfy the same user query, record mutual findings under `overlap` on both entries and populate `siblings_to_watch` on both.
+4. **Trace how the LLM would consume the tool's output shape end to end.** Category: `output_opacity`.
+5. **(Sub-agents only) Inspect the exposed description against the sub-agent's internal prompt.** Category: `subagent_prompt_leak`.
+6. **Compare the stated `responsibility` against the actual code behavior.** Category: `responsibility_drift`.
 
 Record each finding using the fields defined in the protocol. High-severity findings become required test targets in the design phase.
 
