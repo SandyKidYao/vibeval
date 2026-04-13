@@ -40,31 +40,29 @@ For each call point, record: file path, function name, purpose, input/output des
 
 If the codebase exposes tools to the LLM (custom tool registration, MCP server connections, or sub-agents invoked via a tool-like interface), populate a `tools[]` section in `analysis.yaml`. For non-Agent features, skip this step and the next.
 
-For each tool, identify:
+For each tool, record all fields from the Tool Inventory Entry Structure in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — the protocol defines the full schema and per-field semantics. The skill does not restate them.
 
-- **`type`**: `custom_tool` (framework-registered function), `mcp_tool` (MCP-server-exposed), or `subagent` (sub-agent used as a tool).
-- **`source_location`**: `file:line` for custom tools; MCP server + tool name for MCP tools; sub-agent definition path for sub-agents.
-- **`surface`**: the name, description, `input_schema`, and `output_shape` as the LLM actually sees them. Read the registration site verbatim. For MCP tools, read the MCP manifest or connection config.
-- **`responsibility`**: a one-line statement of intent.
+Operational guidance for the extraction itself:
 
-For `type: subagent`, also capture `subagent_prompt_summary` and `subagent_expected_context`.
-
-The full field definitions and YAML layout are in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — do not duplicate them here; follow that protocol.
+- **Capture `surface` verbatim.** `surface.name` and `surface.description` MUST match what the LLM actually sees at runtime, not how the tool is documented in comments, docstrings, or external docs. Read the registration site directly.
+- **For `mcp_tool` entries**, read the MCP server manifest or the connection config to discover the exposed surface — the registration is not in the project's source code.
+- **For `subagent` entries**, the `source_location` is the sub-agent's definition file (not the registration site of the tool-like handle). Also capture `subagent_prompt_summary` and `subagent_expected_context`.
+- **Leave `design_risks[]` and `siblings_to_watch[]` empty at this step.** They are populated in Step 3.
 
 ### 3. Audit Tool Design (Agent features only)
 
-For each entry produced in Step 2, run a static design audit and populate `design_risks[]` and `siblings_to_watch[]`. The finding taxonomy (`description_ambiguity`, `schema_gap`, `overlap`, `output_opacity`, `subagent_prompt_leak`, `responsibility_drift`) and severity semantics are defined in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md`.
+For each entry produced in Step 2, run a static design audit and populate `design_risks[]` and `siblings_to_watch[]`. The finding taxonomy, severity semantics, and category definitions live in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — the skill does not restate them.
 
-Specific checks to perform:
+Operational checks to run per tool (each check maps to a category named in the protocol):
 
-1. **Description clarity**: Does the description distinguish this tool from plausible alternatives? Would a user query matching multiple plausible tools land correctly?
-2. **Schema completeness**: Given the description, does the input schema expose every parameter the LLM would need to construct a correct call? Are types and required/optional flags present?
-3. **Cross-tool overlap**: Compare every pair of tool descriptions. Record mutual `overlap` findings and populate `siblings_to_watch` on both entries.
-4. **Output clarity**: Is the output shape specific enough for the LLM to reliably consume it (especially in downstream chaining)?
-5. **Sub-agent prompt hygiene** (subagents only): Does the sub-agent's exposed description leak internal implementation details that could bias delegation?
-6. **Responsibility drift**: Does the stated `responsibility` match the actual code behavior?
+1. **Read the description in isolation.** Could the LLM pick this tool without seeing the rest of the catalogue? If it depends on process-of-elimination, record a `description_ambiguity` finding.
+2. **Walk the description's parameter mentions against `input_schema`.** If the description implies a parameter that is absent, misnamed, or under-typed in the schema, record a `schema_gap` finding.
+3. **Pairwise compare descriptions across the inventory.** When two tools could plausibly satisfy the same user query, record mutual `overlap` findings (one per tool, each referencing the other) and populate `siblings_to_watch` on both entries.
+4. **Trace how the LLM would consume the output.** If the output shape is unstructured or under-documented for downstream use, record an `output_opacity` finding.
+5. **(Sub-agents only) Read the exposed description for prompt bleed.** If internal implementation details surface in the description in a way that could bias delegation, record a `subagent_prompt_leak` finding.
+6. **Compare `responsibility` against the actual code behavior.** If they diverge, record a `responsibility_drift` finding.
 
-Record each finding with `severity` (high/medium/low), `category`, `finding`, and an optional `suggested_fix`. `high`-severity findings will be required test targets in the design phase.
+Record each finding using the fields defined in the protocol. High-severity findings become required test targets in the design phase.
 
 ### 4. Determine Test Mode
 
@@ -172,11 +170,12 @@ tools:
     surface:
       name: "<LLM-facing name>"
       description: "<LLM-facing description>"
-      input_schema: { <param>: "<type, required/optional, brief>" }
+      input_schema:
+        <param>: "<type, required/optional, brief>"
       output_shape: "<LLM-visible shape>"
     responsibility: "<one-line intent>"
-    design_risks: []          # populated by Audit Tool Design
-    siblings_to_watch: []     # populated by Audit Tool Design
+    design_risks: []          # populated by Audit Tool Design (see 07-agent-tools.md for finding schema)
+    siblings_to_watch: []     # populated by Audit Tool Design; when populated: [{id: "<tool_id>", overlap_reason: "<why>"}]
     # subagent_prompt_summary / subagent_expected_context: only for type: subagent
 ```
 
