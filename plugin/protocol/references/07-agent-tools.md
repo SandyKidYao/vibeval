@@ -152,7 +152,7 @@ tool_coverage:
       - "<severity>/<category>: <item id> targets this risk directly"
 ```
 
-**Invariant.** At the end of the design phase, for every `analysis.yaml:tools[i]`, there exists exactly one `design.yaml:tool_coverage[j]` where `j.tool_id == i.id`, and every mandatory dimension cell under `j.dimensions_covered` is non-empty. Any `high`-severity risk in `i.design_risks` must appear in `j.design_risks_addressed` with at least one referenced item.
+**Invariant.** At the end of the design phase, for every `analysis.yaml:tools[i]`, there exists exactly one `design.yaml:tool_coverage[j]` where `j.tool_id == i.id`, and every mandatory dimension key under `j.dimensions_covered` is non-empty. Any `high`-severity risk in `i.design_risks` must appear in `j.design_risks_addressed` with at least one referenced item.
 
 The design skill enforces this invariant during its final checklist; the Evaluator agent re-verifies it when reviewing the design phase output.
 
@@ -231,31 +231,32 @@ tool_coverage:
 Illustrates what a complete `method: llm` judge_spec looks like for one of the mandatory dimensions. The abbreviated patterns in the Per-Tool Coverage Matrix table name only the diagnostic fields (`method`, `target`, etc.); the full `llm` spec shape (`scoring`, `criteria`, `test_intent`, `anchors`, `calibrations`) is defined in `03-judge-spec.md` and shown here in context.
 
 ```yaml
-# A design.yaml:datasets[].items[] entry for the disambiguation dimension
-# of search_documents (paired with Example 1). The trap is the scenario
-# that satisfies the disambiguation test point; the judge spec targets
-# the tool_call step and uses a binary llm scoring.
-- id: "keyword_vs_recency_ambiguous"
-  description: "User asks for 'the latest report'. Both search_documents and list_recent_docs plausibly apply. Correct choice: list_recent_docs (recency). Tests whether the agent reads search_documents's keyword-focused description carefully."
-  data:
-    user_message: "Can you pull up the latest report for me?"
-  _judge_specs:
-    - method: llm
-      scoring: binary
-      target: {step_type: "tool_call"}
-      criteria: "The agent selects list_recent_docs rather than search_documents for a recency-based request."
-      test_intent: "Verify that the agent distinguishes search_documents (keyword retrieval) from list_recent_docs (recency-based listing) when the user's phrasing leans on recency."
-      trap_design: "The phrase 'pull up' can read as retrieval (→ search_documents), but 'latest report' is a recency signal (→ list_recent_docs). search_documents's description emphasizes keyword search; list_recent_docs's description emphasizes recency. The correct tool is list_recent_docs."
-      anchors:
-        "0": "Called search_documents, or called list_recent_docs with a keyword argument that pretends to search by content."
-        "1": "Called list_recent_docs with no keyword argument (or an empty one), treating the request as recency-based."
-      calibrations:
-        - output: "Called search_documents with query='latest report'."
-          score: 0
-          reason: "Ignored the recency signal and treated the request as keyword search."
-        - output: "Called list_recent_docs with no filter."
-          score: 1
-          reason: "Correctly read the recency signal and chose the recency-based tool."
+# The disambiguation dimension for search_documents lives inside a
+# design.yaml dataset. Showing the full enclosing structure makes
+# the example directly usable as a template.
+datasets:
+  - items:
+      - id: "keyword_vs_recency_ambiguous"
+        description: "User asks for 'the latest report'. Both search_documents and list_recent_docs plausibly apply. Correct choice: list_recent_docs (recency). Tests whether the agent reads search_documents's keyword-focused description carefully."
+        data:
+          user_message: "Can you pull up the latest report for me?"
+        _judge_specs:
+          - method: "llm"
+            scoring: "binary"
+            target: {step_type: "tool_call"}
+            criteria: "The agent selects list_recent_docs rather than search_documents for a recency-based request."
+            test_intent: "Verify that the agent distinguishes search_documents (keyword retrieval) from list_recent_docs (recency-based listing) when the user's phrasing leans on recency."
+            trap_design: "The phrase 'pull up' can read as retrieval (→ search_documents), but 'latest report' is a recency signal (→ list_recent_docs). search_documents's description emphasizes keyword search; list_recent_docs's description emphasizes recency. The correct tool is list_recent_docs."
+            anchors:
+              "0": "Called search_documents, or called list_recent_docs with a keyword argument that pretends to search by content."
+              "1": "Called list_recent_docs with no keyword argument (or an empty one), treating the request as recency-based."
+            calibrations:
+              - output: "Called search_documents with query='latest report'."
+                score: 0
+                reason: "Ignored the recency signal and treated the request as keyword search."
+              - output: "Called list_recent_docs with no filter."
+                score: 1
+                reason: "Correctly read the recency signal and chose the recency-based tool."
 ```
 
 ### Example 5: `tool_coverage` cross-reference for `research_subagent` (Example 2)
