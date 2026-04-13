@@ -75,7 +75,7 @@ tools:
 | `surface.name` | string | Yes | Verbatim name exposed to the LLM. |
 | `surface.description` | string | Yes | Verbatim description exposed to the LLM. |
 | `surface.input_schema` | object | Yes | Parameter layout as the LLM sees it. Mirror the real schema; a free-form summary is acceptable if the real schema is complex. |
-| `surface.output_shape` | string | Yes | What the tool returns. Describe the LLM-visible shape, not the internal Python/TS type. |
+| `surface.output_shape` | string | Yes | What the tool returns. Describe the LLM-visible shape, not the language-level type signature. |
 | `responsibility` | string | Yes | One-line statement of intent — why this tool exists. |
 | `design_risks` | list | Yes (possibly empty) | Findings from the static audit. |
 | `siblings_to_watch` | list | Yes (possibly empty) | Other tool ids with potential selection overlap. |
@@ -115,7 +115,19 @@ Each tool in the inventory induces a fixed coverage matrix. Five dimensions are 
 | 6 | Sequence / composition | Conditional | Only when this tool has a documented ordering dependency with another tool | `method: rule`, `rule: tool_sequence`, `args: {expected: [...]}`. |
 | 7 | Sub-agent delegation | Conditional | Only when `type: subagent` | `method: llm`, `target: {step_type: "tool_call"}`, evaluating whether the main agent delegated at the right moment AND whether it passed all items listed in `subagent_expected_context`. |
 
-**Gate rule.** For every tool entry, cells 1–5 MUST each map to at least one item in `design.yaml:tool_coverage[].dimensions_covered`. Cells 6 and 7 are required only when their applicability condition holds. The Evaluator agent treats missing mandatory cells as a blocking issue.
+**Gate rule.** For every tool entry, dimensions 1–5 MUST each map to at least one item in `design.yaml:tool_coverage[].dimensions_covered`. Dimensions 6 and 7 are required only when their applicability condition holds. The Evaluator agent treats missing mandatory dimensions as a blocking issue.
+
+**Canonical YAML keys.** The `dimensions_covered` section of `tool_coverage[]` uses these keys (one per dimension):
+
+- `positive_selection` (dimension 1)
+- `negative_selection` (dimension 2)
+- `disambiguation` (dimension 3)
+- `argument_fidelity` (dimension 4)
+- `output_handling` (dimension 5)
+- `sequence` (dimension 6, conditional)
+- `subagent_delegation` (dimension 7, conditional)
+
+**Required `trap_design` for disambiguation.** The `trap_design` field is marked optional in the base `llm` spec schema defined in `03-judge-spec.md`, but the disambiguation dimension (3) requires it — the trap is the entire test point. Every `llm` spec that satisfies the disambiguation dimension MUST include a `trap_design` describing the ambiguity.
 
 **Degradation rule for disambiguation.** When `siblings_to_watch` is empty, the disambiguation dimension is still mandatory. Satisfy it with a scenario that pits the tool against a plausible-but-wrong alternative that is not another registered tool (e.g., "answer from memory without calling the tool"), and describe the alternative in `trap_design`.
 
@@ -212,4 +224,53 @@ tool_coverage:
       output_handling: ["search_empty_result", "search_transport_error"]
     design_risks_addressed:
       - "high/overlap: keyword_vs_recency_ambiguous item directly exercises the search_documents vs list_recent_docs boundary"
+```
+
+### Example 4: Complete data item and `_judge_specs` for the disambiguation dimension
+
+Illustrates what a complete `method: llm` judge_spec looks like for one of the mandatory dimensions. The abbreviated patterns in the Per-Tool Coverage Matrix table name only the diagnostic fields (`method`, `target`, etc.); the full `llm` spec shape (`scoring`, `criteria`, `test_intent`, `anchors`, `calibrations`) is defined in `03-judge-spec.md` and shown here in context.
+
+```yaml
+# A design.yaml:datasets[].items[] entry for the disambiguation dimension
+# of search_documents (paired with Example 1). The trap is the scenario
+# that satisfies the disambiguation test point; the judge spec targets
+# the tool_call step and uses a binary llm scoring.
+- id: "keyword_vs_recency_ambiguous"
+  description: "User asks for 'the latest report'. Both search_documents and list_recent_docs plausibly apply. Correct choice: list_recent_docs (recency). Tests whether the agent reads search_documents's keyword-focused description carefully."
+  data:
+    user_message: "Can you pull up the latest report for me?"
+  _judge_specs:
+    - method: llm
+      scoring: binary
+      target: {step_type: "tool_call"}
+      criteria: "The agent selects list_recent_docs rather than search_documents for a recency-based request."
+      test_intent: "Verify that the agent distinguishes search_documents (keyword retrieval) from list_recent_docs (recency-based listing) when the user's phrasing leans on recency."
+      trap_design: "The phrase 'pull up' can read as retrieval (→ search_documents), but 'latest report' is a recency signal (→ list_recent_docs). search_documents's description emphasizes keyword search; list_recent_docs's description emphasizes recency. The correct tool is list_recent_docs."
+      anchors:
+        "0": "Called search_documents, or called list_recent_docs with a keyword argument that pretends to search by content."
+        "1": "Called list_recent_docs with no keyword argument (or an empty one), treating the request as recency-based."
+      calibrations:
+        - output: "Called search_documents with query='latest report'."
+          score: 0
+          reason: "Ignored the recency signal and treated the request as keyword search."
+        - output: "Called list_recent_docs with no filter."
+          score: 1
+          reason: "Correctly read the recency signal and chose the recency-based tool."
+```
+
+### Example 5: `tool_coverage` cross-reference for `research_subagent` (Example 2)
+
+Shows how a `subagent` tool populates the conditional `subagent_delegation` dimension. Note that `sequence` is absent (no ordering dependency with another tool) and `design_risks_addressed` is empty (the inventory entry had `design_risks: []`).
+
+```yaml
+tool_coverage:
+  - tool_id: "research_subagent"
+    dimensions_covered:
+      positive_selection: ["research_topic_explicit"]
+      negative_selection: ["casual_chat_no_research"]
+      disambiguation: ["research_vs_direct_answer"]
+      argument_fidelity: ["research_scope_narrow"]
+      output_handling: ["research_returns_no_sources"]
+      subagent_delegation: ["research_delegation_with_full_context"]
+    design_risks_addressed: []
 ```
