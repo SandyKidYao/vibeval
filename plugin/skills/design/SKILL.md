@@ -15,6 +15,7 @@ Produce design artifacts in `tests/vibeval/{feature}/design/`.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — **Must read first.** The three core principles (information asymmetry + global process visibility + contract) govern all design decisions.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` — Dataset format, data items, persona format.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — **For Agent features only.** Per-tool coverage matrix (5 mandatory + 2 conditional dimensions) and the `tool_coverage[]` invariant. Consult before executing the Tool Coverage Planning step below.
 
 ## Contract-Driven Design
 
@@ -63,7 +64,23 @@ The user can skip this step by explicitly requesting it, but it runs by default.
 
 ## Steps
 
-### 1. Design Datasets
+### 1. Tool Coverage Planning (Agent features only)
+
+If `analysis.yaml` contains a non-empty `tools[]` section, enumerate the per-tool coverage matrix BEFORE designing datasets. The coverage matrix (5 mandatory + 2 conditional dimensions), the `tool_coverage[]` invariant, and all field definitions live in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — consult that file for semantics.
+
+Operational procedure:
+
+1. **Iterate the inventory.** For every entry in `analysis.yaml:tools[]`, create a matching entry in `design.yaml:tool_coverage[]` keyed by `tool_id`. The matching is 1:1 — if a tool has no entry, the design is incomplete.
+2. **Plan items per mandatory dimension.** For each of `positive_selection`, `negative_selection`, `disambiguation`, `argument_fidelity`, `output_handling`, plan at least one dataset item that exercises the dimension. One item may cover multiple dimensions if the scenario naturally exercises them. Record the item ids under `dimensions_covered`.
+3. **Plan items for applicable conditional dimensions.** Include `sequence` only when the tool has a documented ordering dependency with another tool. Include `subagent_delegation` only when `type: subagent`.
+4. **Address high-severity design risks.** For every `design_risks` entry with `severity: high`, plan at least one item that directly exercises that risk and record it in `design_risks_addressed`. Medium and low risks are optional targets.
+5. **Assign items to datasets.** Decide which dataset(s) will host the planned items — the item bodies themselves are produced in Step 2 (Design Datasets), and their judge specs in Step 3 (Design Judge Specs). This step produces the plan and the `tool_coverage[]` cross-reference block.
+
+Skip this step entirely when `analysis.yaml` has no `tools[]` section.
+
+The design is not complete until every tool in `analysis.yaml:tools[]` has a matching `tool_coverage[]` entry with every mandatory dimension cell non-empty. The Evaluator agent re-verifies this invariant.
+
+### 2. Design Datasets
 
 For each pipeline in the analysis, design one or more datasets.
 
@@ -71,7 +88,7 @@ For data item format (single-turn items and multi-turn personas), consult `${CLA
 
 Each data item should have a clear testing intent — what specific capability or failure mode is being tested. Apply the information asymmetry principle from `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md`: embed deliberate traps and edge cases that will be visible only to the judge.
 
-### 2. Design Judge Specs
+### 3. Design Judge Specs
 
 Consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` for the complete list of available rules, LLM scoring modes (binary/five-point), `target` options for process evaluation, and all required fields.
 
@@ -83,7 +100,7 @@ Key design guidance (from philosophy):
 - Use `target` to decompose evaluation: one spec for final output, others for specific turns or step types. Consult `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` for target syntax.
 - One JudgeSpec per evaluation dimension. Do not combine multiple criteria.
 
-### 3. Design Test Structure
+### 4. Design Test Structure
 
 **For single-turn tests:**
 - Mock external deps using the test framework's mock mechanism
@@ -97,7 +114,7 @@ Key design guidance (from philosophy):
 - First round uses `opening_message` from persona (no simulate needed)
 - Test code is responsible for managing bot state (conversation history, etc.)
 
-### 4. Design Mock Environment Context (single-turn only)
+### 5. Design Mock Environment Context (single-turn only)
 
 The AI under test doesn't just receive user input — it also receives data from tools, APIs, and databases it calls during processing. These responses are **part of the test input** and must be designed with the same deliberation as user-facing data.
 
@@ -166,6 +183,22 @@ datasets:
         anchors: { ... }
         calibrations: [ ... ]
 
+# Agent features only. One entry per tool in analysis.yaml:tools[].
+# Full invariant and field definitions in 07-agent-tools.md.
+# Omit this section entirely for non-Agent features.
+tool_coverage:
+  - tool_id: "<matches analysis.yaml:tools[].id>"
+    dimensions_covered:
+      positive_selection: ["<item id>"]
+      negative_selection: ["<item id>"]
+      disambiguation: ["<item id>"]
+      argument_fidelity: ["<item id>"]
+      output_handling: ["<item id>"]
+      sequence: ["<item id>"]              # only if applicable
+      subagent_delegation: ["<item id>"]   # only if applicable
+    design_risks_addressed:
+      - "<severity>/<category>: <item id> targets this risk directly"
+
 test_code:
   framework: "<pytest|vitest|jest|go test>"
 
@@ -188,7 +221,8 @@ test_code:
 Present to the user:
 1. Summary: datasets (single-turn/multi-turn), items count, judge specs count
 2. Ask to review judge specs — anchors, calibrations, test_intent, and trap_design directly affect evaluation quality
-3. Suggest `vibeval serve --open` to visually review and edit datasets, items, and judge specs in the interactive dashboard
-4. Ask: **"Design complete. Shall I proceed to generate test code and datasets?"**
+3. **Agent features only.** Tool coverage status: for each tool in `analysis.yaml:tools[]`, list which dimensions are covered and by how many items. Flag any tool whose mandatory dimensions are incomplete.
+4. Suggest `vibeval serve --open` to visually review and edit datasets, items, and judge specs in the interactive dashboard
+5. Ask: **"Design complete. Shall I proceed to generate test code and datasets?"**
 
 Wait for user confirmation before proceeding to the generate phase.
