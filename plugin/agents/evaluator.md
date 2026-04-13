@@ -48,6 +48,7 @@ Review `tests/vibeval/{feature}/design/design.yaml`:
 | **Trap quality** | Traps are realistic failure modes the AI might actually exhibit? Not contrived scenarios that would never occur? |
 | **Specificity** | Anchors describe what good/bad means for THIS specific test scenario? Calibrations use concrete examples from THIS data? |
 | **Requirement depth** | Every `requirement` in the contract has at least one dataset item + judge spec that tests it? Trace each requirement. |
+| **Tool coverage** | (Agent features only — applies when `analysis.yaml` has a non-empty `tools[]` section.) For every tool in `tools[]`, does `design.yaml:tool_coverage[]` contain a matching entry? Are all mandatory dimension keys (`positive_selection`, `negative_selection`, `disambiguation`, `argument_fidelity`, `output_handling`) non-empty? Are conditional keys (`sequence`, `subagent_delegation`) present when applicable? Are all `high`-severity `design_risks` addressed by at least one referenced item? See `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` for the invariant. |
 
 ### Generate Phase Review
 
@@ -100,3 +101,4 @@ summary: "Coverage is insufficient — multilingual requirement from contract is
 4. **Acknowledge quality honestly** — if all dimensions pass (score=2), say so. Do not invent issues to appear thorough.
 5. **Check the feedback log** — if the contract's `feedback_log` contains past user feedback, verify that it has been addressed in the current artifacts. Unaddressed feedback is a finding.
 6. **Prioritize by contract** — `known_gaps` and `user_emphasis` in quality criteria indicate where the user cares most. Weight your review toward these areas.
+7. **Mechanical checks come first for Agent features** — when `analysis.yaml` has a `tools[]` section, verify the `tool_coverage[]` invariant (every inventory tool has a matching entry; every mandatory dimension key is non-empty) before scoring the other dimensions. A missing mandatory key is always a blocking `tool_coverage: 0` finding with a specific suggestion to add the missing item. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` for the invariant definition.
