@@ -123,6 +123,20 @@ vibeval's judging LLM is not subject to these limitations because it receives **
    - criteria: "Was the bot's tool call sequence reasonable"
    ```
 
+### Tools as Independent Test Units (Agent features)
+
+Principle 2 reaches its fullest expression in Agent projects, where the LLM does not produce a single final output but makes a chain of tool-selection decisions. Each such decision is an independent review surface:
+
+- **Did the agent choose the right tool for this scenario?** (selection)
+- **Did it construct arguments faithfully from the user's intent?** (argument fidelity)
+- **Did it handle the returned data appropriately, including empty and error cases?** (output handling)
+- **When two tools overlap in description, did it pick the better one?** (disambiguation)
+- **For tools implemented as sub-agents, did it delegate at the right moment and pass sufficient context?** (delegation)
+
+A holistic "the final answer is good" evaluation collapses all of these into one signal. Per-tool evaluation preserves them as independent dimensions, and — crucially — makes "every tool has test coverage" a mechanically checkable property of the design.
+
+See `07-agent-tools.md` for the tool inventory structure, the coverage matrix, and how each dimension maps onto existing `judge_spec` primitives.
+
 ## Principle 3: Negotiated Requirements — The Contract
 
 Code analysis alone cannot surface all requirements. For AI applications, critical expectations often exist outside the code: in the user's mind, in product specs, in implicit quality standards. If the test designer only knows what the code does, the resulting tests will only verify current behavior — not intended behavior.
