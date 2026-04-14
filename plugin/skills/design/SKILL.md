@@ -78,6 +78,8 @@ Operational procedure:
 5. **Assign items to datasets.** Decide which dataset(s) will host the planned items — the item bodies themselves are produced in Step 2 (Design Datasets), and their judge specs in Step 3 (Design Judge Specs). This step produces the plan and the `tool_coverage[]` cross-reference block.
 6. **Prove the coverage mechanically.** Every item id you list under `dimensions_covered.<dimension>` must, by the end of Step 3, correspond to a dataset item whose effective `judge_specs` carry at least one spec matching that dimension's Allowed Spec Pattern from `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` (section "Allowed Spec Patterns Per Dimension"). Do not register an item id under a dimension unless you have authored (or are authoring in Step 2 or Step 3) the matching `judge_spec`. The Evaluator cross-checks this after the design phase using structural field comparison on `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, `args.field` (presence), and `trap_design` (presence/non-empty) — placeholder ids or non-matching specs will block the handoff.
 
+   **Extra rule for `output_handling`.** In addition to the allowed `judge_spec` pattern (an `llm` spec with `target: "output"` or `target` omitted), every item registered under `dimensions_covered.output_handling` MUST also carry a `mock_context_summary` entry whose key equals `analysis.yaml:tools[i].mock_target` for this tool. Across the full `output_handling` item list, the set of `mock_context_summary[<tools[i].mock_target>]` string values MUST span at least 2 distinct (not byte-equal) strings — copy-pasting the same summary across items does not satisfy the dimension. The Evaluator enforces both checks on `mock_context_summary`, not on `_mock_context` (which does not exist until the synthesize phase). Author the corresponding `mock_context_summary` entries in Step 5 of this phase; the full `_mock_context` payload is filled in later.
+
 Skip this step entirely when `analysis.yaml` has no `tools[]` section (i.e., `project.execution_mode == "non_agent"`).
 
 The design is not complete until every tool in `analysis.yaml:tools[]` has a matching `tool_coverage[]` entry satisfying the strengthened invariant defined in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` (section "Allowed Spec Patterns Per Dimension") — every referenced item id must resolve to a real dataset item, and every resolved item must carry at least one `judge_spec` matching the dimension's Allowed Spec Patterns Per Dimension. Non-empty keys alone are not enough; placeholder ids fail. The Evaluator agent re-verifies the invariant mechanically.
@@ -120,7 +122,13 @@ Key design guidance (from philosophy):
 
 The AI under test doesn't just receive user input — it also receives data from tools, APIs, and databases it calls during processing. These responses are **part of the test input** and must be designed with the same deliberation as user-facing data.
 
-For each mock point identified in the analysis (`ai_calls` and `external_deps`), design what each dependency returns **per data item**. This mock data lives in `_mock_context` within each data item (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` for format).
+For each mock point identified in the analysis, design what each dependency returns **per data item**. Three kinds of mock point exist (the first two have existed since 0.5.0; the third was added in 0.6.0 for Agent features):
+
+- `analysis.yaml:ai_calls[]` — LLM invocations, keyed by `mock_target`.
+- `analysis.yaml:external_deps[]` — non-LLM external dependencies (databases, HTTP APIs, etc.), keyed by `mock_target`.
+- `analysis.yaml:tools[]` — Agent tools registered for LLM consumption (custom tools, MCP tools, sub-agents), keyed by `mock_target`. This is the key the Evaluator uses to look up `mock_context_summary[...]` entries during Agent tool validation.
+
+This mock data lives in `_mock_context` within each data item at runtime (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` for format). At design phase the per-item summary is recorded in `mock_context_summary` keyed by the same `mock_target` — the full `_mock_context` payload is generated later in the synthesize phase.
 
 **Design principles:**
 
@@ -129,6 +137,7 @@ For each mock point identified in the analysis (`ai_calls` and `external_deps`),
 - **Per-item variation** — different items should exercise different environment conditions (success, empty, error, edge-case data, conflicting data).
 - **LLM mock responses** must be realistic and exercise the judge specs. For rules with `values_from`, responses MUST include all expected values. For multi-call pipelines, design sequential responses in order.
 - **Multi-call ordering** — for pipelines that call the same dependency multiple times, design the response sequence in order.
+- **Agent features — `output_handling` dimension** — for every item registered under `tool_coverage.dimensions_covered.output_handling`, the `mock_context_summary[<tools[i].mock_target>]` entry MUST be present (key equals `analysis.yaml:tools[i].mock_target` exactly). The summary string describes the scenario (e.g., "returns empty result list", "returns HTTP 429", "returns malformed JSON without `total` field"). Across the full `output_handling` item list, at least 2 items MUST carry summaries whose string values are not byte-equal — copy-pasting the same summary across items fails the Evaluator's mechanical check regardless of how different the intent descriptions read. Plan these summary variants when you author the mock_context_summary block for each item.
 
 In the design output, mock context is specified per item under `mock_context_summary` (the full `_mock_context` data is generated in the data synthesis phase):
 
