@@ -166,10 +166,22 @@ def _build_design_model(
                 continue
             items_by_id[iid] = item_model
 
-    # 2. Filesystem datasets (reuse existing loader for Q7 consistency)
+    # 2. Filesystem datasets (reuse existing loader for Q7 consistency).
+    # load_all_datasets can raise on malformed YAML/JSON (parser has no
+    # try/except). If it does, skip filesystem cross-reference — the
+    # subsequent _validate_datasets phase will surface the concrete per-file
+    # parse errors.
     datasets_dir = feature_dir / "datasets"
     if datasets_dir.exists():
-        fs_datasets: dict[str, Dataset] = load_all_datasets(str(datasets_dir))
+        try:
+            fs_datasets: dict[str, Dataset] = load_all_datasets(str(datasets_dir))
+        except Exception as e:
+            report.warn(
+                path_str,
+                f"could not load filesystem datasets for cross-reference "
+                f"({type(e).__name__}); the datasets phase will report the details",
+            )
+            fs_datasets = {}
         for ds_name, ds in fs_datasets.items():
             for item in ds.items:
                 if item.id in items_by_id:
@@ -380,7 +392,28 @@ def _run_rule_7(
     report: ValidationReport,
 ) -> None:
     """Mechanical check ported from 07-agent-tools.md §Mechanical Check."""
-    coverage_by_id = {c.tool_id: c for c in design.tool_coverage}
+    # Detect duplicate tool_coverage entries (same tool_id used twice) and
+    # orphan entries (tool_id not matching any analysis.yaml:tools[].id).
+    analysis_tool_ids = {t.id for t in analysis.tools}
+    coverage_by_id: dict[str, ToolCoverageModel] = {}
+    for c in design.tool_coverage:
+        if c.tool_id in coverage_by_id:
+            report.error(
+                c.raw_path,
+                f"duplicate tool_coverage entry for tool_id '{c.tool_id}'",
+            )
+            continue
+        if c.tool_id not in analysis_tool_ids:
+            report.error(
+                c.raw_path,
+                f"tool_coverage entry '{c.tool_id}' has no matching tool "
+                f"in analysis.yaml:tools[]",
+            )
+            # Still register it so a later duplicate check works, but it
+            # won't be visited by the analysis.tools loop below.
+            coverage_by_id[c.tool_id] = c
+            continue
+        coverage_by_id[c.tool_id] = c
 
     for tool in analysis.tools:
         coverage = coverage_by_id.get(tool.id)

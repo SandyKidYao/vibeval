@@ -128,6 +128,12 @@ def validate_analysis(feature_dir: Path, report: ValidationReport) -> AnalysisMo
             if fname not in entry:
                 report.error(loc, f"missing required field '{fname}'")
                 missing_any = True
+            elif not isinstance(entry[fname], str):
+                report.error(
+                    loc,
+                    f"field '{fname}' must be a string, got {type(entry[fname]).__name__}",
+                )
+                missing_any = True
 
         ttype = entry.get("type")
         if ttype is not None and ttype not in ALLOWED_TOOL_TYPES:
@@ -143,6 +149,20 @@ def validate_analysis(feature_dir: Path, report: ValidationReport) -> AnalysisMo
                 if sf not in surface:
                     report.error(loc, f"missing required field 'surface.{sf}'")
                     missing_any = True
+            # Type checks on surface scalar fields
+            for sf in ("name", "description", "output_shape"):
+                if sf in surface and not isinstance(surface[sf], str):
+                    report.error(
+                        loc,
+                        f"field 'surface.{sf}' must be a string, got {type(surface[sf]).__name__}",
+                    )
+                    missing_any = True
+            if "input_schema" in surface and not isinstance(surface["input_schema"], dict):
+                report.error(
+                    loc,
+                    f"field 'surface.input_schema' must be a mapping, got {type(surface['input_schema']).__name__}",
+                )
+                missing_any = True
 
         # design_risks and siblings_to_watch are required lists (may be empty)
         for list_field in ("design_risks", "siblings_to_watch"):

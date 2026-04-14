@@ -1362,3 +1362,154 @@ def test_validate_feature_missing_execution_mode_errors(tmp_path: Path) -> None:
     """)
     report = validate_feature(str(feature))
     assert any("project.execution_mode is required" in m for m in error_messages(report))
+
+
+# ========================================================================
+# Regression tests for external review findings
+# ========================================================================
+
+
+def test_validate_feature_malformed_dataset_item_reports_cleanly(tmp_path: Path) -> None:
+    """Bug 1: malformed dataset YAML must produce a ValidationReport, not
+    crash with yaml.ParserError. The design validator must skip filesystem
+    datasets gracefully; the datasets phase then reports the concrete error.
+    """
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Overwrite the default filesystem dataset item with genuinely broken YAML
+    bad_item = feature / "datasets" / "default" / "item.yaml"
+    bad_item.write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+    # Must not raise — must return a ValidationReport
+    report = validate_feature(str(feature))
+    # The datasets phase should report the YAML parse error
+    assert any("Invalid" in m or "YAML" in m for m in error_messages(report)), \
+        error_messages(report)
+
+
+def test_validate_analysis_tool_id_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2: a non-string tools[].id must be rejected with a clean error,
+    not crash with TypeError: unhashable type."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: [a, b]
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: "x"
+              description: "y"
+              input_schema: {}
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    # Must not raise
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "must be a string" in m for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_validate_analysis_surface_name_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2 extension: a non-string tools[].surface.name must be rejected."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "t1"
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: [a, b]
+              description: "y"
+              input_schema: {}
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "'surface.name'" in m and "must be a string" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_validate_analysis_input_schema_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2 extension: tools[].surface.input_schema must be a mapping."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "t1"
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: "t1"
+              description: "y"
+              input_schema: "not a mapping"
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "'surface.input_schema'" in m and "must be a mapping" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_design_duplicate_tool_coverage_entry_errors(tmp_path: Path) -> None:
+    """Bug 3a: two tool_coverage entries with the same tool_id must produce
+    an error — not silently overwrite the first."""
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add a duplicate entry for search_documents
+    dup_entry = dict(design_dict["tool_coverage"][0])
+    design_dict["tool_coverage"].append(dup_entry)
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=_yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "duplicate tool_coverage entry for tool_id 'search_documents'" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_design_orphan_tool_coverage_entry_errors(tmp_path: Path) -> None:
+    """Bug 3b: a tool_coverage entry with a tool_id that does not match any
+    analysis.yaml:tools[].id must produce an error — not be silently ignored."""
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add an orphan entry
+    design_dict["tool_coverage"].append({
+        "tool_id": "orphan_tool",
+        "dimensions_covered": {
+            "positive_selection": ["pos_item"],
+            "negative_selection": ["neg_item"],
+            "disambiguation": ["disambig_item"],
+            "argument_fidelity": ["argfid_item"],
+            "output_handling": ["oh_empty", "oh_error"],
+        },
+    })
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=_yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "orphan_tool" in m and "no matching tool" in m
+        for m in error_messages(report)
+    ), error_messages(report)
