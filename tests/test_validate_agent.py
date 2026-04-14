@@ -312,3 +312,173 @@ def test_analysis_agent_mode_subagent_expected_context_must_be_list_of_strings(t
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("must be a list of strings" in m for m in error_messages(report))
+
+
+# ========================================================================
+# validate_design: loading and item flattening
+# ========================================================================
+
+from vibeval.validate_design import (
+    DesignModel,
+    ItemModel,
+    JudgeSpecModel,
+    ToolCoverageModel,
+    validate_design,
+    _build_judge_spec_model,
+)
+
+
+def add_design(feature: Path, design_yaml: str) -> None:
+    write(feature / "design" / "design.yaml", design_yaml)
+
+
+def make_agent_feature(tmp_path: Path, design_yaml: str | None = None) -> tuple[Path, AnalysisModel]:
+    feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+    if design_yaml is not None:
+        add_design(feature, design_yaml)
+    return feature, analysis
+
+
+# --- File presence ----------------------------------------------------------
+
+def test_design_missing_file_silent_when_non_agent(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+    """)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    validate_design(feature, analysis, report)
+    assert report.issues == []
+
+
+def test_design_missing_file_warns_when_agent_mode(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=None)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "design.yaml missing" in m and "execution_mode: agent" in m
+        for m in warning_messages(report)
+    )
+    assert error_messages(report) == []
+
+
+# --- Inline dataset item flattening ----------------------------------------
+
+FULL_COVERAGE_DESIGN = """
+    datasets:
+      - name: "search"
+        judge_specs:
+          - method: rule
+            rule: "contains"
+            args: {field: "outputs.summary", value: "ok"}
+        items:
+          - id: "pos_item"
+            data: {user_message: "find docs about X"}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {tool_name: "search_documents"}
+          - id: "neg_item"
+            data: {user_message: "hello"}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {tool_name: "search_documents"}
+          - id: "disambig_item"
+            data: {user_message: "latest report"}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "picks right tool"
+                trap_design: "recency vs keyword"
+          - id: "argfid_item"
+            data: {user_message: "X and Y"}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "args faithful"
+          - id: "oh_empty"
+            data: {user_message: "Z"}
+            mock_context_summary:
+              "app.tools.search_documents": "returns empty result list"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "handles empty gracefully"
+          - id: "oh_error"
+            data: {user_message: "W"}
+            mock_context_summary:
+              "app.tools.search_documents": "returns HTTP 429 error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "handles error gracefully"
+
+    tool_coverage:
+      - tool_id: "search_documents"
+        dimensions_covered:
+          positive_selection: ["pos_item"]
+          negative_selection: ["neg_item"]
+          disambiguation: ["disambig_item"]
+          argument_fidelity: ["argfid_item"]
+          output_handling: ["oh_empty", "oh_error"]
+"""
+
+
+def test_design_inline_dataset_items_resolved(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # _run_rule_7 is a stub in Task 3 — we only verify the model loads cleanly.
+    assert error_messages(report) == []
+
+
+def test_design_judge_spec_model_extraction() -> None:
+    raw = {
+        "method": "rule",
+        "rule": "tool_called",
+        "args": {"tool_name": "search_documents", "field": "outputs.summary"},
+    }
+    m = _build_judge_spec_model(raw)
+    assert m.method == "rule"
+    assert m.rule == "tool_called"
+    assert m.args_tool_name == "search_documents"
+    assert m.args_field_present is True
+    assert m.target_step_type is None
+    # target key absent → target_output True (only meaningful for llm specs;
+    # the pattern matcher reads this boolean only when method == "llm")
+    assert m.target_output is True
+
+    llm_raw = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": "output",
+        "criteria": "x",
+        "trap_design": "non-empty",
+    }
+    m2 = _build_judge_spec_model(llm_raw)
+    assert m2.method == "llm"
+    assert m2.target_output is True
+    assert m2.target_step_type is None
+    assert m2.trap_design_nonempty is True
+
+    llm_tool_call = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": {"step_type": "tool_call"},
+        "criteria": "x",
+        "trap_design": "",
+    }
+    m3 = _build_judge_spec_model(llm_tool_call)
+    assert m3.target_step_type == "tool_call"
+    assert m3.target_output is False
+    assert m3.trap_design_nonempty is False  # empty string → False
