@@ -420,9 +420,13 @@ def _run_rule_7(
                     )
 
         # Check (c) — output_handling multi-item constraint
+        # Only runs when the dimension has at least one RESOLVED item.
+        # Empty-list case → check (a) emitted "no items listed".
+        # All-ghost case → check (a) emitted "not found in any dataset" per id.
+        # In both cases, check (c) stays silent to avoid duplicate noise.
         oh_ids = coverage.dimensions_covered.get("output_handling", [])
-        if oh_ids:
-            oh_items = [design.items_by_id[i] for i in oh_ids if i in design.items_by_id]
+        oh_items = [design.items_by_id[i] for i in oh_ids if i in design.items_by_id]
+        if oh_items:
             if len(oh_items) < 2:
                 report.error(
                     coverage.raw_path,

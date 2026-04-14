@@ -1197,9 +1197,9 @@ def test_design_output_handling_two_items_all_empty_summaries_errors(tmp_path: P
     # _coerce_mock_context_summary keeps empty strings, but the check (b)
     # guard "tool.mock_target in item.mock_context_summary" still passes —
     # the key exists with value "").
-    # So check (c) should fire with the distinctness error.
+    # So check (c) should fire with the distinctness error ("byte-equal").
     assert any(
-        ("byte-equal" in m or "all empty" in m)
+        "byte-equal" in m
         for m in error_messages(report)
     )
 
@@ -1232,3 +1232,53 @@ def test_design_output_handling_empty_list_only_check_a_fires(tmp_path: Path) ->
     assert not any(
         "output_handling must span >=2" in m for m in msgs
     ), "check (c) should not duplicate check (a)'s 'no items listed' error"
+
+
+def test_design_output_handling_all_ghost_items_no_check_c_error(tmp_path: Path) -> None:
+    # All ids under output_handling are ghosts. Check (a) fires "not found"
+    # per ghost; check (c) must stay silent to avoid double-counting.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: ["ghost1", "ghost2"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # Check (a) MUST fire for both ghost ids
+    assert any("item 'ghost1' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost2' not found in any dataset" in m for m in msgs)
+    # Check (c) MUST NOT fire with a count-based or distinctness-based error
+    assert not any(
+        "output_handling must span >=2" in m for m in msgs
+    ), f"check (c) fired spuriously with all-ghost ids: {msgs}"
+    assert not any(
+        "all empty or byte-equal" in m for m in msgs
+    ), f"check (c) distinctness fired spuriously: {msgs}"
+
+
+def test_design_output_handling_partially_resolved_oh_ids_fires_check_c(tmp_path: Path) -> None:
+    # 3 ids listed, 2 are ghosts, 1 resolves. Check (a) fires for the 2
+    # ghosts; check (c) fires "found 1" for the single resolved item.
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Replace output_handling list with [oh_empty, ghost_a, ghost_b]
+    design_dict["tool_coverage"][0]["dimensions_covered"]["output_handling"] = [
+        "oh_empty", "ghost_a", "ghost_b"
+    ]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # Check (a) for the ghosts
+    assert any("item 'ghost_a' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost_b' not found in any dataset" in m for m in msgs)
+    # Check (c) fires "found 1"
+    assert any(
+        "output_handling must span >=2 items, found 1" in m for m in msgs
+    )
