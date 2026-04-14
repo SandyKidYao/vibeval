@@ -34,7 +34,7 @@ The analyze skill determines the value by scanning the code for tool registratio
 
 Every downstream consumer (design skill, evaluator agent, consultant agent) reads `project.execution_mode` instead of re-scanning source code. This keeps the classification single-sourced and auditable.
 
-See `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` for where the field lives in the analysis.yaml schema, and `${CLAUDE_PLUGIN_ROOT}/plugin/skills/analyze/SKILL.md` for the extraction procedure.
+See `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` for where the field lives in the analysis.yaml schema, and `${CLAUDE_PLUGIN_ROOT}/skills/analyze/SKILL.md` for the extraction procedure.
 
 ## Tool Inventory Entry Structure
 
@@ -155,7 +155,7 @@ The Per-Tool Coverage Matrix above names the typical `judge_spec` for each dimen
 | `positive_selection` | `method: rule`, `rule: tool_called`, `args.tool_name == <tool.surface.name>` |
 | `negative_selection` | `method: rule`, `rule: tool_not_called`, `args.tool_name == <tool.surface.name>` |
 | `disambiguation` | `method: llm`, `target: {step_type: "tool_call"}`, `trap_design` is a non-empty string |
-| `argument_fidelity` | EITHER `method: llm`, `target: {step_type: "tool_call"}`; OR `method: rule`, `rule: equals` (or `matches`), `args.field` references a step-args path |
+| `argument_fidelity` | EITHER `method: llm`, `target: {step_type: "tool_call"}`; OR `method: rule`, `rule: equals` (or `matches`) with `args.field` present (the evaluator checks `args.field` existence only; verifying that it actually points at a real step-args path is the design skill's responsibility, not the mechanical check's) |
 | `output_handling` | The item's `_mock_context` contains an entry keyed by the tool's mock target, AND the item has `method: llm`, `target: "output"` (or `target` omitted). The multi-item constraint below also applies across the full `output_handling` list. |
 | `sequence` | `method: rule`, `rule: tool_sequence`, `args.expected` contains `<tool.surface.name>` |
 | `subagent_delegation` | Applies only to tools with `type: subagent`. `method: llm`, `target: {step_type: "tool_call"}` |
@@ -166,9 +166,11 @@ For every `(tool_id, dimension, item_id)` triple in `design.yaml:tool_coverage[]
 
 1. **Item existence.** `item_id` MUST resolve to an entry in some `datasets[].items[]` reachable from the design (either inline in design.yaml's datasets section or by id reference to a dataset manifest under `tests/vibeval/{feature}/datasets/`). Unresolved ids fail the check.
 
-2. **Spec pattern match.** The resolved item's effective `judge_specs` — item-level `_judge_specs` overriding manifest-level `judge_specs` per `02-dataset.md` priority rules — MUST contain at least one spec matching one of the allowed patterns for the dimension. The match is structural: the evaluator compares `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, and the presence/non-emptiness of `trap_design` — nothing else. No interpretation of prose fields.
+2. **Spec pattern match.** The resolved item's effective `judge_specs` — item-level `_judge_specs` overriding manifest-level `judge_specs` per `02-dataset.md` priority rules — MUST contain at least one spec matching one of the allowed patterns for the dimension. The match is structural: the evaluator compares `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, the presence of `args.field` (value not validated), and the presence/non-emptiness of `trap_design` — nothing else. No interpretation of prose fields. Comparisons to the tool's `surface.name` are exact string equality.
 
-3. **`output_handling` multi-item constraint.** In addition to (1) and (2), the full `dimensions_covered.output_handling` list MUST span at least 2 items whose `_mock_context` responses for this tool's mock target differ. A single success-case item does not satisfy the dimension, even if it matches the allowed pattern. This reflects that the dimension tests varied environment behavior (success / empty / error / malformed), not a single response.
+3. **`output_handling` multi-item constraint.** In addition to (1) and (2), the full `dimensions_covered.output_handling` list MUST span at least 2 items whose `_mock_context` payloads for this tool's mock target are **not byte-equal** — i.e., the serialized YAML/JSON of each item's `_mock_context[<mock_target>]` entry must differ as strings. The comparison is byte-level on purpose: it is mechanical and reproducible, and it catches the "same payload copy-pasted across items" failure mode without asking the evaluator to judge whether two payloads are "semantically different enough". A single success-case item does not satisfy the dimension, even if it matches the allowed pattern. This reflects that the dimension tests varied environment behavior (success / empty / error / malformed), not a single response.
+
+For the `output_handling` dimension, check (2) additionally verifies that the resolved data item has a `_mock_context` entry whose key matches the tool's mock target (as recorded in `analysis.yaml:tools[i].source_location` or the downstream mock wiring). This is the only data-item field the mechanical check inspects; all other dimensions look at `judge_spec` fields exclusively.
 
 ### Principle
 
