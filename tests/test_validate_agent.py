@@ -1,4 +1,4 @@
-"""Tests for validate_analysis + validate_design (Agent features).
+"""Tests for validate_analysis (Agent features).
 
 Fixtures are built in-memory under tmp_path, mirroring tests/test_validate.py.
 """
@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+
+import yaml
 
 import pytest
 
@@ -184,50 +186,45 @@ def test_analysis_agent_mode_requires_non_empty_tools(tmp_path: Path) -> None:
 def test_analysis_agent_mode_tool_missing_required_field_errors(
     tmp_path: Path, removed_field: str, expected_fragment: str
 ) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     del data["tools"][0][removed_field]
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any(expected_fragment in m for m in error_messages(report))
 
 
 def test_analysis_agent_mode_missing_surface_name_errors(tmp_path: Path) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     del data["tools"][0]["surface"]["name"]
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("surface.name" in m for m in error_messages(report))
 
 
 def test_analysis_agent_mode_invalid_tool_type_errors(tmp_path: Path) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     data["tools"][0]["type"] = "weird"
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("type invalid 'weird'" in m for m in error_messages(report))
 
 
 def test_analysis_agent_mode_design_risks_must_be_list(tmp_path: Path) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     data["tools"][0]["design_risks"] = "oops"
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("design_risks must be a list" in m for m in error_messages(report))
 
 
 def test_analysis_agent_mode_siblings_to_watch_must_be_list(tmp_path: Path) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     data["tools"][0]["siblings_to_watch"] = "oops"
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("siblings_to_watch must be a list" in m for m in error_messages(report))
@@ -258,10 +255,60 @@ def test_analysis_agent_mode_subagent_requires_prompt_summary(tmp_path: Path) ->
 
 
 def test_analysis_agent_mode_duplicate_tool_ids_errors(tmp_path: Path) -> None:
-    import yaml as _yaml
-    data = _yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
     data["tools"].append(dict(data["tools"][0]))  # shallow copy duplicates the id
-    feature = make_feature(tmp_path, analysis_yaml=_yaml.safe_dump(data))
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
     report = ValidationReport()
     validate_analysis(feature, report)
     assert any("duplicate id 'search_documents'" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_subagent_requires_expected_context(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "research"
+            type: "subagent"
+            source_location: "plugin/agents/research.md"
+            mock_target: "app.agents.research"
+            surface:
+              name: "research"
+              description: "Research things"
+              input_schema: {}
+              output_shape: "brief"
+            responsibility: "Research"
+            design_risks: []
+            siblings_to_watch: []
+            subagent_prompt_summary: "You are a research assistant."
+    """)
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("subagent_expected_context required" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_subagent_expected_context_must_be_list_of_strings(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "research"
+            type: "subagent"
+            source_location: "plugin/agents/research.md"
+            mock_target: "app.agents.research"
+            surface:
+              name: "research"
+              description: "Research things"
+              input_schema: {}
+              output_shape: "brief"
+            responsibility: "Research"
+            design_risks: []
+            siblings_to_watch: []
+            subagent_prompt_summary: "You are a research assistant."
+            subagent_expected_context: [123, "ok"]
+    """)
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("must be a list of strings" in m for m in error_messages(report))

@@ -18,6 +18,8 @@ from .validate import ValidationReport
 ALLOWED_EXECUTION_MODES = ("agent", "non_agent")
 ALLOWED_TOOL_TYPES = ("custom_tool", "mcp_tool", "subagent")
 
+_MISSING = object()  # sentinel for "key absent" vs "key present with value"
+
 # Required top-level fields on each tools[] entry
 TOOL_REQUIRED_FIELDS = (
     "id",
@@ -45,8 +47,8 @@ class ToolModel:
 @dataclass
 class AnalysisModel:
     execution_mode: str      # "agent" | "non_agent"
+    raw_path: str
     tools: list[ToolModel] = field(default_factory=list)
-    raw_path: str = ""
 
 
 def validate_analysis(feature_dir: Path, report: ValidationReport) -> AnalysisModel | None:
@@ -143,15 +145,14 @@ def validate_analysis(feature_dir: Path, report: ValidationReport) -> AnalysisMo
                     report.error(loc, f"missing required field 'surface.{sf}'")
                     missing_any = True
 
-        # design_risks and siblings_to_watch must be lists (may be empty)
+        # design_risks and siblings_to_watch are required lists (may be empty)
         for list_field in ("design_risks", "siblings_to_watch"):
-            if list_field in entry and not isinstance(entry[list_field], list):
-                report.error(loc, f"{list_field} must be a list")
-                missing_any = True
-        # Both are required (may be empty list)
-        for list_field in ("design_risks", "siblings_to_watch"):
-            if list_field not in entry:
+            val = entry.get(list_field, _MISSING)
+            if val is _MISSING:
                 report.error(loc, f"missing required field '{list_field}' (empty list is OK)")
+                missing_any = True
+            elif not isinstance(val, list):
+                report.error(loc, f"{list_field} must be a list")
                 missing_any = True
 
         # subagent extras
@@ -159,6 +160,14 @@ def validate_analysis(feature_dir: Path, report: ValidationReport) -> AnalysisMo
             if "subagent_prompt_summary" not in entry:
                 report.error(loc, "subagent_prompt_summary required for type: subagent")
                 missing_any = True
+            if "subagent_expected_context" not in entry:
+                report.error(loc, "subagent_expected_context required for type: subagent")
+                missing_any = True
+            else:
+                sec = entry["subagent_expected_context"]
+                if not isinstance(sec, list) or not all(isinstance(x, str) for x in sec):
+                    report.error(loc, "subagent_expected_context must be a list of strings")
+                    missing_any = True
 
         if missing_any:
             any_tool_failed = True
