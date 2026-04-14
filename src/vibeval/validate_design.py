@@ -1,0 +1,512 @@
+"""Design.yaml validator — schema checks + Rule 7 mechanical check.
+
+Ports the vibeval-evaluator agent's Rule 7 from
+plugin/protocol/references/07-agent-tools.md into CLI Python code.
+
+All checks are structural. No prose interpretation.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from .dataset import Dataset, load_dataset
+from .validate import ValidationReport
+from .validate_analysis import AnalysisModel, ToolModel
+
+
+MANDATORY_DIMENSIONS = (
+    "positive_selection",
+    "negative_selection",
+    "disambiguation",
+    "argument_fidelity",
+    "output_handling",
+)
+
+
+@dataclass
+class JudgeSpecModel:
+    """Structural view of a judge_spec used by the pattern matcher.
+
+    Only the fields named by the Allowed Spec Patterns table are extracted;
+    prose fields (criteria, test_intent, description) are deliberately NOT
+    stored — the mechanical check does not look at them.
+    """
+
+    method: str | None
+    rule: str | None
+    target_step_type: str | None
+    target_output: bool
+    args_tool_name: str | None
+    args_field_present: bool
+    args_expected: Any
+    trap_design_nonempty: bool
+
+
+@dataclass
+class ItemModel:
+    id: str
+    dataset_name: str
+    source: str                                       # "design_inline" | "manifest"
+    mock_context_summary: dict[str, str] = field(default_factory=dict)
+    effective_specs: list[JudgeSpecModel] = field(default_factory=list)
+
+
+@dataclass
+class ToolCoverageModel:
+    tool_id: str
+    dimensions_covered: dict[str, list[str]]
+    raw_path: str
+
+
+@dataclass
+class DesignModel:
+    tool_coverage: list[ToolCoverageModel]
+    items_by_id: dict[str, ItemModel]
+    raw_path: str
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
+def validate_design(
+    feature_dir: Path,
+    analysis: AnalysisModel | None,
+    report: ValidationReport,
+) -> None:
+    feature_dir = Path(feature_dir)
+    design_path = feature_dir / "design" / "design.yaml"
+
+    if not design_path.exists():
+        if analysis is not None and analysis.execution_mode == "agent":
+            report.warn(
+                str(design_path),
+                "design.yaml missing but analysis.yaml has execution_mode: agent",
+            )
+        return
+
+    path_str = str(design_path)
+    try:
+        raw = yaml.safe_load(design_path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        report.error(path_str, f"Invalid YAML: {e}")
+        return
+
+    if raw is None:
+        report.error(path_str, "design.yaml is empty")
+        return
+    if not isinstance(raw, dict):
+        report.error(path_str, "design.yaml must be a YAML mapping at the top level")
+        return
+
+    design = _build_design_model(raw, feature_dir, path_str, report)
+
+    if analysis is None:
+        report.warn(
+            path_str,
+            "design.yaml present but analysis.yaml missing; "
+            "skipping tool_coverage cross-reference",
+        )
+        return
+    if analysis.execution_mode != "agent":
+        return  # non_agent: schema-only, no tool_coverage cross-reference
+
+    _run_rule_7(analysis, design, report)
+
+
+# ---------------------------------------------------------------------------
+# Model construction
+# ---------------------------------------------------------------------------
+
+
+def _build_design_model(
+    raw: dict,
+    feature_dir: Path,
+    path_str: str,
+    report: ValidationReport,
+) -> DesignModel:
+    items_by_id: dict[str, ItemModel] = {}
+
+    # 1. Inline datasets from design.yaml itself
+    datasets = raw.get("datasets", [])
+    if datasets is not None and not isinstance(datasets, list):
+        report.error(path_str, "datasets must be a list")
+        datasets = []
+    for di, ds in enumerate(datasets or []):
+        if not isinstance(ds, dict):
+            report.error(f"{path_str} datasets[{di}]", "dataset entry must be a mapping")
+            continue
+        ds_name = ds.get("name", f"<inline-{di}>")
+        manifest_specs = _coerce_spec_list(ds.get("judge_specs", []))
+        for ii, item_raw in enumerate(ds.get("items", []) or []):
+            if not isinstance(item_raw, dict):
+                report.error(
+                    f"{path_str} datasets[{di}].items[{ii}]",
+                    "item must be a mapping",
+                )
+                continue
+            iid = item_raw.get("id")
+            if not isinstance(iid, str) or not iid:
+                report.error(
+                    f"{path_str} datasets[{di}].items[{ii}]",
+                    "item.id is required and must be a non-empty string",
+                )
+                continue
+            item_model = _build_item_model(
+                iid=iid,
+                dataset_name=ds_name,
+                source="design_inline",
+                item_raw=item_raw,
+                manifest_specs=manifest_specs,
+            )
+            if iid in items_by_id:
+                report.warn(
+                    path_str,
+                    f"item '{iid}' defined in multiple datasets — using {items_by_id[iid].dataset_name}",
+                )
+                continue
+            items_by_id[iid] = item_model
+
+    # 2. Filesystem datasets. Iterate per-dataset so that one malformed
+    # dataset file does not poison cross-reference for the other datasets
+    # (load_all_datasets aborts on the first parse error). Bad datasets
+    # are skipped here with a soft warning; the downstream _validate_datasets
+    # phase will surface the concrete per-file parse error.
+    datasets_dir = feature_dir / "datasets"
+    if datasets_dir.exists():
+        for p in sorted(datasets_dir.iterdir()):
+            is_dataset_entry = False
+            if p.is_dir() and not p.name.startswith("."):
+                is_dataset_entry = True
+            elif p.suffix in (".json", ".yaml", ".yml"):
+                is_dataset_entry = True
+            if not is_dataset_entry:
+                continue
+            try:
+                ds = load_dataset(p)
+            except Exception as e:
+                report.warn(
+                    path_str,
+                    f"could not load dataset '{p.name}' for cross-reference "
+                    f"({type(e).__name__}); the datasets phase will report the details",
+                )
+                continue
+            ds_name = ds.name
+            for item in ds.items:
+                if item.id in items_by_id:
+                    existing = items_by_id[item.id]
+                    report.warn(
+                        path_str,
+                        f"item '{item.id}' defined in multiple datasets — "
+                        f"using {existing.dataset_name}",
+                    )
+                    # design-inline wins on collision per Q12 — skip
+                    continue
+                effective = ds.effective_specs(item)
+                mcs_raw = item.data.get("mock_context_summary", {})
+                mcs = _coerce_mock_context_summary(mcs_raw)
+                items_by_id[item.id] = ItemModel(
+                    id=item.id,
+                    dataset_name=ds_name,
+                    source="manifest",
+                    mock_context_summary=mcs,
+                    effective_specs=[_build_judge_spec_model(s) for s in effective],
+                )
+
+    # 3. tool_coverage[]
+    tool_coverage: list[ToolCoverageModel] = []
+    tc_raw = raw.get("tool_coverage", [])
+    if tc_raw is not None and not isinstance(tc_raw, list):
+        report.error(path_str, "tool_coverage must be a list")
+        tc_raw = []
+    for ci, entry in enumerate(tc_raw or []):
+        loc = f"{path_str} tool_coverage[{ci}]"
+        if not isinstance(entry, dict):
+            report.error(loc, "tool_coverage entry must be a mapping")
+            continue
+        tool_id = entry.get("tool_id")
+        if not isinstance(tool_id, str) or not tool_id:
+            report.error(loc, "tool_id is required and must be a non-empty string")
+            continue
+        dims_raw = entry.get("dimensions_covered", {})
+        if not isinstance(dims_raw, dict):
+            report.error(loc, "dimensions_covered must be a mapping")
+            continue
+        dims_clean: dict[str, list[str]] = {}
+        dims_ok = True
+        for dname, dvalue in dims_raw.items():
+            if not isinstance(dvalue, list) or not all(isinstance(x, str) for x in dvalue):
+                report.error(loc, f"dimensions_covered.{dname} must be a list of strings")
+                dims_ok = False
+                continue
+            dims_clean[dname] = list(dvalue)
+        if not dims_ok:
+            continue
+        tool_coverage.append(ToolCoverageModel(
+            tool_id=tool_id,
+            dimensions_covered=dims_clean,
+            raw_path=loc,
+        ))
+
+    return DesignModel(
+        tool_coverage=tool_coverage,
+        items_by_id=items_by_id,
+        raw_path=path_str,
+    )
+
+
+def _build_item_model(
+    iid: str,
+    dataset_name: str,
+    source: str,
+    item_raw: dict,
+    manifest_specs: list[dict],
+) -> ItemModel:
+    # Q7 full-replacement precedence: item _judge_specs (if non-empty) replace
+    # manifest judge_specs entirely.
+    item_specs = _coerce_spec_list(item_raw.get("_judge_specs", []))
+    effective = item_specs if item_specs else manifest_specs
+    mcs_raw = item_raw.get("mock_context_summary", {})
+    mcs = _coerce_mock_context_summary(mcs_raw)
+    return ItemModel(
+        id=iid,
+        dataset_name=dataset_name,
+        source=source,
+        mock_context_summary=mcs,
+        effective_specs=[_build_judge_spec_model(s) for s in effective],
+    )
+
+
+def _coerce_spec_list(x: Any) -> list[dict]:
+    if isinstance(x, list):
+        return [s for s in x if isinstance(s, dict)]
+    return []
+
+
+def _coerce_mock_context_summary(x: Any) -> dict[str, str]:
+    if not isinstance(x, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in x.items():
+        if isinstance(k, str) and isinstance(v, str):
+            out[k] = v
+    return out
+
+
+def _build_judge_spec_model(raw: dict) -> JudgeSpecModel:
+    method = raw.get("method") if isinstance(raw.get("method"), str) else None
+    rule = raw.get("rule") if isinstance(raw.get("rule"), str) else None
+
+    target = raw.get("target")
+    target_step_type: str | None = None
+    target_output = False
+    if isinstance(target, dict):
+        st = target.get("step_type")
+        if isinstance(st, str):
+            target_step_type = st
+    elif isinstance(target, str):
+        if target == "output":
+            target_output = True
+    else:
+        # target key absent → treated as "output" (only meaningful for llm specs)
+        target_output = True
+
+    args = raw.get("args") if isinstance(raw.get("args"), dict) else {}
+    args_tool_name = args.get("tool_name") if isinstance(args.get("tool_name"), str) else None
+    args_field_present = "field" in args
+    args_expected = args.get("expected")
+
+    trap = raw.get("trap_design")
+    trap_design_nonempty = isinstance(trap, str) and len(trap) > 0
+
+    return JudgeSpecModel(
+        method=method,
+        rule=rule,
+        target_step_type=target_step_type,
+        target_output=target_output,
+        args_tool_name=args_tool_name,
+        args_field_present=args_field_present,
+        args_expected=args_expected,
+        trap_design_nonempty=trap_design_nonempty,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rule 7 check (b) — spec pattern match
+# ---------------------------------------------------------------------------
+
+
+def _any_spec_matches(item: ItemModel, dim: str, tool: ToolModel) -> bool:
+    """Structural match: one case per dimension from the Allowed Spec Patterns
+    table in 07-agent-tools.md. No prose interpretation — only method, rule,
+    target.step_type, target_output, args.tool_name, args.field presence,
+    args.expected, and trap_design presence/non-emptiness are inspected.
+    """
+    for spec in item.effective_specs:
+        if dim == "positive_selection":
+            if (spec.method == "rule" and spec.rule == "tool_called"
+                    and spec.args_tool_name == tool.surface_name):
+                return True
+
+        elif dim == "negative_selection":
+            if (spec.method == "rule" and spec.rule == "tool_not_called"
+                    and spec.args_tool_name == tool.surface_name):
+                return True
+
+        elif dim == "disambiguation":
+            if (spec.method == "llm" and spec.target_step_type == "tool_call"
+                    and spec.trap_design_nonempty):
+                return True
+
+        elif dim == "argument_fidelity":
+            if spec.method == "llm" and spec.target_step_type == "tool_call":
+                return True
+            if (spec.method == "rule" and spec.rule in ("equals", "matches")
+                    and spec.args_field_present):
+                return True
+
+        elif dim == "output_handling":
+            # target: "output" (string) or target key absent, AND the item
+            # must have a mock_context_summary entry keyed by tool.mock_target.
+            # target_step_type must be None (dict form is rejected per Q6).
+            if (spec.method == "llm" and spec.target_output
+                    and spec.target_step_type is None
+                    and tool.mock_target in item.mock_context_summary):
+                return True
+
+        elif dim == "sequence":
+            if spec.method == "rule" and spec.rule == "tool_sequence":
+                expected = spec.args_expected
+                if isinstance(expected, list) and tool.surface_name in expected:
+                    return True
+
+        elif dim == "subagent_delegation":
+            if spec.method == "llm" and spec.target_step_type == "tool_call":
+                return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Rule 7 mechanical check
+# ---------------------------------------------------------------------------
+
+
+def _run_rule_7(
+    analysis: AnalysisModel,
+    design: DesignModel,
+    report: ValidationReport,
+) -> None:
+    """Mechanical check ported from 07-agent-tools.md §Mechanical Check."""
+    # Detect duplicate tool_coverage entries (same tool_id used twice) and
+    # orphan entries (tool_id not matching any analysis.yaml:tools[].id).
+    analysis_tool_ids = {t.id for t in analysis.tools}
+    coverage_by_id: dict[str, ToolCoverageModel] = {}
+    for c in design.tool_coverage:
+        if c.tool_id in coverage_by_id:
+            report.error(
+                c.raw_path,
+                f"duplicate tool_coverage entry for tool_id '{c.tool_id}'",
+            )
+            continue
+        if c.tool_id not in analysis_tool_ids:
+            report.error(
+                c.raw_path,
+                f"tool_coverage entry '{c.tool_id}' has no matching tool "
+                f"in analysis.yaml:tools[]",
+            )
+            # Still register it so a later duplicate check works, but it
+            # won't be visited by the analysis.tools loop below.
+            coverage_by_id[c.tool_id] = c
+            continue
+        coverage_by_id[c.tool_id] = c
+
+    for tool in analysis.tools:
+        coverage = coverage_by_id.get(tool.id)
+        if coverage is None:
+            report.error(
+                design.raw_path,
+                f"no tool_coverage entry for tool '{tool.id}'",
+            )
+            continue
+
+        mandatory = list(MANDATORY_DIMENSIONS)
+        if tool.type == "subagent":
+            mandatory.append("subagent_delegation")
+
+        for dim in mandatory:
+            item_ids = coverage.dimensions_covered.get(dim, [])
+            if not item_ids:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dimension '{dim}' has no items listed",
+                )
+                continue
+            for item_id in item_ids:
+                item = design.items_by_id.get(item_id)
+                if item is None:
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' dim '{dim}' item '{item_id}' "
+                        f"not found in any dataset",
+                    )
+                    continue
+                if not _any_spec_matches(item, dim, tool):
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' dim '{dim}' item '{item_id}' "
+                        f"has no judge_spec matching the Allowed Pattern for '{dim}'",
+                    )
+
+        # Check (c) — output_handling multi-item constraint
+        # Only runs when the dimension has at least one RESOLVED item.
+        # Empty-list case → check (a) emitted "no items listed".
+        # All-ghost case → check (a) emitted "not found in any dataset" per id.
+        # In both cases, check (c) stays silent to avoid duplicate noise.
+        oh_ids = coverage.dimensions_covered.get("output_handling", [])
+        oh_items = [design.items_by_id[i] for i in oh_ids if i in design.items_by_id]
+        if oh_items:
+            if len(oh_items) < 2:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' output_handling must span >=2 items, "
+                    f"found {len(oh_items)}",
+                )
+            else:
+                summaries = [
+                    item.mock_context_summary.get(tool.mock_target, "")
+                    for item in oh_items
+                ]
+                distinct_nonempty = {s for s in summaries if s}
+                if len(distinct_nonempty) < 2:
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' output_handling: "
+                        f"mock_context_summary['{tool.mock_target}'] values "
+                        f"are all empty or byte-equal; need >=2 distinct",
+                    )
+
+        # Conditional: sequence dimension — Q8, never required by the CLI.
+        # Only structurally checked when listed.
+        seq_ids = coverage.dimensions_covered.get("sequence", [])
+        for item_id in seq_ids:
+            item = design.items_by_id.get(item_id)
+            if item is None:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dim 'sequence' item '{item_id}' "
+                    f"not found in any dataset",
+                )
+                continue
+            if not _any_spec_matches(item, "sequence", tool):
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dim 'sequence' item '{item_id}' "
+                    f"has no judge_spec matching the Allowed Pattern for 'sequence'",
+                )

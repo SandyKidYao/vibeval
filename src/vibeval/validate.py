@@ -92,6 +92,14 @@ def validate_feature(feature_dir: str | Path) -> ValidationReport:
         report.error(str(feature_dir), "Feature directory does not exist")
         return report
 
+    # Agent features: analysis.yaml and design.yaml
+    # Local imports to avoid circular dependency — the new modules import
+    # ValidationReport from this file.
+    from .validate_analysis import validate_analysis
+    from .validate_design import validate_design
+    analysis = validate_analysis(feature_dir, report)
+    validate_design(feature_dir, analysis, report)
+
     # Validate datasets
     datasets_dir = feature_dir / "datasets"
     if datasets_dir.exists():

@@ -1,0 +1,1646 @@
+"""Tests for validate_analysis (Agent features).
+
+Fixtures are built in-memory under tmp_path, mirroring tests/test_validate.py.
+"""
+
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+
+import yaml
+
+import pytest
+
+from vibeval.validate import ValidationReport, validate_feature
+from vibeval.validate_analysis import (
+    AnalysisModel,
+    ToolModel,
+    validate_analysis,
+)
+from vibeval.validate_design import (
+    DesignModel,
+    ItemModel,
+    JudgeSpecModel,
+    ToolCoverageModel,
+    validate_design,
+    _build_judge_spec_model,
+)
+
+
+# --- Helpers -----------------------------------------------------------------
+
+def write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(textwrap.dedent(content).lstrip(), encoding="utf-8")
+
+
+def make_feature(tmp_path: Path, analysis_yaml: str | None = None) -> Path:
+    feature = tmp_path / "feat"
+    feature.mkdir(parents=True, exist_ok=True)
+    if analysis_yaml is not None:
+        write(feature / "analysis" / "analysis.yaml", analysis_yaml)
+    return feature
+
+
+def error_messages(report: ValidationReport) -> list[str]:
+    return [i.message for i in report.errors]
+
+
+def warning_messages(report: ValidationReport) -> list[str]:
+    return [i.message for i in report.warnings]
+
+
+# --- validate_analysis: file presence ---------------------------------------
+
+def test_analysis_missing_file_silent_when_absent(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml=None)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert report.issues == []
+
+
+def test_analysis_invalid_yaml_errors(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="project: [unclosed\n")
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any("Invalid YAML" in m or "YAML" in m for m in error_messages(report))
+
+
+def test_analysis_top_level_not_dict_errors(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="- just a list\n")
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any("must be a YAML mapping" in m for m in error_messages(report))
+
+
+# --- execution_mode ----------------------------------------------------------
+
+def test_analysis_missing_execution_mode_errors(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any("project.execution_mode is required" in m for m in error_messages(report))
+
+
+def test_analysis_unknown_execution_mode_errors(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "hybrid"
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any("unknown execution_mode 'hybrid'" in m for m in error_messages(report))
+
+
+# --- non_agent ---------------------------------------------------------------
+
+def test_analysis_non_agent_mode_passes_with_no_tools(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is not None
+    assert result.execution_mode == "non_agent"
+    assert result.tools == []
+    assert error_messages(report) == []
+
+
+def test_analysis_non_agent_mode_warns_if_tools_present(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+        tools:
+          - id: "stray"
+            type: "custom_tool"
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is not None
+    assert result.tools == []
+    assert error_messages(report) == []
+    assert any("non_agent" in m and "tools[]" in m for m in warning_messages(report))
+
+
+# --- agent mode --------------------------------------------------------------
+
+AGENT_HAPPY = """
+    project:
+      name: foo
+      execution_mode: "agent"
+    tools:
+      - id: "search_documents"
+        type: "custom_tool"
+        source_location: "app/tools.py:42"
+        mock_target: "app.tools.search_documents"
+        surface:
+          name: "search_documents"
+          description: "Search internal documents by keyword"
+          input_schema:
+            query: "string, required"
+          output_shape: "list of {doc_id, title}"
+        responsibility: "Keyword retrieval over the corpus"
+        design_risks: []
+        siblings_to_watch: []
+"""
+
+
+def test_analysis_agent_mode_happy_path_passes(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is not None
+    assert result.execution_mode == "agent"
+    assert len(result.tools) == 1
+    tool = result.tools[0]
+    assert tool.id == "search_documents"
+    assert tool.type == "custom_tool"
+    assert tool.mock_target == "app.tools.search_documents"
+    assert tool.surface_name == "search_documents"
+    assert error_messages(report) == []
+
+
+def test_analysis_agent_mode_requires_non_empty_tools(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert any("tools[] is required" in m for m in error_messages(report))
+
+
+@pytest.mark.parametrize("removed_field,expected_fragment", [
+    ("id", "missing required field 'id'"),
+    ("type", "missing required field 'type'"),
+    ("mock_target", "missing required field 'mock_target'"),
+    ("source_location", "missing required field 'source_location'"),
+    ("responsibility", "missing required field 'responsibility'"),
+])
+def test_analysis_agent_mode_tool_missing_required_field_errors(
+    tmp_path: Path, removed_field: str, expected_fragment: str
+) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    del data["tools"][0][removed_field]
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any(expected_fragment in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_missing_surface_name_errors(tmp_path: Path) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    del data["tools"][0]["surface"]["name"]
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("surface.name" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_invalid_tool_type_errors(tmp_path: Path) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data["tools"][0]["type"] = "weird"
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("type invalid 'weird'" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_design_risks_must_be_list(tmp_path: Path) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data["tools"][0]["design_risks"] = "oops"
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("design_risks must be a list" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_siblings_to_watch_must_be_list(tmp_path: Path) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data["tools"][0]["siblings_to_watch"] = "oops"
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("siblings_to_watch must be a list" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_subagent_requires_prompt_summary(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "research"
+            type: "subagent"
+            source_location: "plugin/agents/research.md"
+            mock_target: "app.agents.research"
+            surface:
+              name: "research"
+              description: "Research things"
+              input_schema: {}
+              output_shape: "brief"
+            responsibility: "Research"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("subagent_prompt_summary" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_duplicate_tool_ids_errors(tmp_path: Path) -> None:
+    data = yaml.safe_load(textwrap.dedent(AGENT_HAPPY))
+    data["tools"].append(dict(data["tools"][0]))  # shallow copy duplicates the id
+    feature = make_feature(tmp_path, analysis_yaml=yaml.safe_dump(data))
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("duplicate id 'search_documents'" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_subagent_requires_expected_context(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "research"
+            type: "subagent"
+            source_location: "plugin/agents/research.md"
+            mock_target: "app.agents.research"
+            surface:
+              name: "research"
+              description: "Research things"
+              input_schema: {}
+              output_shape: "brief"
+            responsibility: "Research"
+            design_risks: []
+            siblings_to_watch: []
+            subagent_prompt_summary: "You are a research assistant."
+    """)
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("subagent_expected_context required" in m for m in error_messages(report))
+
+
+def test_analysis_agent_mode_subagent_expected_context_must_be_list_of_strings(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "research"
+            type: "subagent"
+            source_location: "plugin/agents/research.md"
+            mock_target: "app.agents.research"
+            surface:
+              name: "research"
+              description: "Research things"
+              input_schema: {}
+              output_shape: "brief"
+            responsibility: "Research"
+            design_risks: []
+            siblings_to_watch: []
+            subagent_prompt_summary: "You are a research assistant."
+            subagent_expected_context: [123, "ok"]
+    """)
+    report = ValidationReport()
+    validate_analysis(feature, report)
+    assert any("must be a list of strings" in m for m in error_messages(report))
+
+
+# ========================================================================
+# validate_design: loading and item flattening
+# ========================================================================
+
+
+def add_design(feature: Path, design_yaml: str) -> None:
+    write(feature / "design" / "design.yaml", design_yaml)
+
+
+def make_agent_feature(tmp_path: Path, design_yaml: str | None = None) -> tuple[Path, AnalysisModel]:
+    feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    # Create minimal filesystem dataset to avoid warnings
+    ds_dir = feature / "datasets" / "default"
+    ds_dir.mkdir(parents=True, exist_ok=True)
+    write(ds_dir / "manifest.yaml", """
+        name: default
+        judge_specs: []
+    """)
+    write(ds_dir / "item.yaml", """
+        _id: item
+        user_message: "test"
+    """)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+    if design_yaml is not None:
+        add_design(feature, design_yaml)
+    return feature, analysis
+
+
+# --- File presence ----------------------------------------------------------
+
+def test_design_missing_file_silent_when_non_agent(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+    """)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    validate_design(feature, analysis, report)
+    assert report.issues == []
+
+
+def test_design_missing_file_warns_when_agent_mode(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=None)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "design.yaml missing" in m and "execution_mode: agent" in m
+        for m in warning_messages(report)
+    )
+    assert error_messages(report) == []
+
+
+# --- Inline dataset item flattening ----------------------------------------
+
+FULL_COVERAGE_DESIGN = """
+    datasets:
+      - name: "search"
+        judge_specs:
+          - method: rule
+            rule: "contains"
+            args: {field: "outputs.summary", value: "ok"}
+        items:
+          - id: "pos_item"
+            data: {user_message: "find docs about X"}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {tool_name: "search_documents"}
+          - id: "neg_item"
+            data: {user_message: "hello"}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {tool_name: "search_documents"}
+          - id: "disambig_item"
+            data: {user_message: "latest report"}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "picks right tool"
+                trap_design: "recency vs keyword"
+          - id: "argfid_item"
+            data: {user_message: "X and Y"}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "args faithful"
+          - id: "oh_empty"
+            data: {user_message: "Z"}
+            mock_context_summary:
+              "app.tools.search_documents": "returns empty result list"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "handles empty gracefully"
+          - id: "oh_error"
+            data: {user_message: "W"}
+            mock_context_summary:
+              "app.tools.search_documents": "returns HTTP 429 error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "handles error gracefully"
+
+    tool_coverage:
+      - tool_id: "search_documents"
+        dimensions_covered:
+          positive_selection: ["pos_item"]
+          negative_selection: ["neg_item"]
+          disambiguation: ["disambig_item"]
+          argument_fidelity: ["argfid_item"]
+          output_handling: ["oh_empty", "oh_error"]
+"""
+
+
+def test_design_inline_dataset_items_resolved(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # FULL_COVERAGE_DESIGN satisfies check (a) item existence, check (b)
+    # pattern match for all mandatory dims, and check (c) output_handling
+    # multi-item constraint (once Task 6 lands).
+    assert error_messages(report) == []
+
+
+def test_design_judge_spec_model_extraction() -> None:
+    raw = {
+        "method": "rule",
+        "rule": "tool_called",
+        "args": {"tool_name": "search_documents", "field": "outputs.summary"},
+    }
+    m = _build_judge_spec_model(raw)
+    assert m.method == "rule"
+    assert m.rule == "tool_called"
+    assert m.args_tool_name == "search_documents"
+    assert m.args_field_present is True
+    assert m.target_step_type is None
+    # target key absent → target_output True (only meaningful for llm specs;
+    # the pattern matcher reads this boolean only when method == "llm")
+    assert m.target_output is True
+
+    llm_raw = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": "output",
+        "criteria": "x",
+        "trap_design": "non-empty",
+    }
+    m2 = _build_judge_spec_model(llm_raw)
+    assert m2.method == "llm"
+    assert m2.target_output is True
+    assert m2.target_step_type is None
+    assert m2.trap_design_nonempty is True
+
+    llm_tool_call = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": {"step_type": "tool_call"},
+        "criteria": "x",
+        "trap_design": "",
+    }
+    m3 = _build_judge_spec_model(llm_tool_call)
+    assert m3.target_step_type == "tool_call"
+    assert m3.target_output is False
+    assert m3.trap_design_nonempty is False  # empty string → False
+
+    # Branch 3: target is a string but not "output" (e.g., "tool_call").
+    # Neither flag should be set — this is a malformed/unrecognized target
+    # that should NOT be interpreted as output_handling. Task 5's pattern
+    # matcher depends on this.
+    other_string = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": "tool_call",
+        "criteria": "x",
+    }
+    m4 = _build_judge_spec_model(other_string)
+    assert m4.method == "llm"
+    assert m4.target_step_type is None
+    assert m4.target_output is False
+
+
+# --- Rule 7 check (a) — item existence --------------------------------------
+
+def test_design_missing_tool_coverage_entry_for_tool_errors(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "no tool_coverage entry for tool 'search_documents'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_mandatory_dim_empty_list_errors(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: []
+              negative_selection: []
+              disambiguation: []
+              argument_fidelity: []
+              output_handling: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    for dim in ("positive_selection", "negative_selection",
+                "disambiguation", "argument_fidelity", "output_handling"):
+        assert any(f"dimension '{dim}' has no items listed" in m for m in msgs), \
+            f"missing error for {dim} in {msgs}"
+
+
+def test_design_unknown_item_id_errors_check_a(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: ["ghost1", "ghost2"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any("item 'ghost' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost1' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost2' not found in any dataset" in m for m in msgs)
+
+
+def test_design_sequence_listed_unknown_item_errors(tmp_path: Path) -> None:
+    # sequence is never required (Q8), but when listed, check (a) still runs.
+    # Start from FULL_COVERAGE_DESIGN and add a ghost sequence reference.
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["ghost_seq"]
+    new_design = yaml.safe_dump(design_dict)
+
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=new_design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any(
+        "sequence" in m and "ghost_seq" in m and "not found" in m
+        for m in msgs
+    )
+
+
+def test_design_sequence_pattern_match_passes(tmp_path: Path) -> None:
+    # An item under sequence with a correct tool_sequence spec referencing
+    # search_documents by surface name must pass check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add a sequence item to the inline dataset
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_good",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_sequence",
+                "args": {"expected": ["search_documents", "other_tool"]},
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_good"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_sequence_pattern_mismatch_errors(tmp_path: Path) -> None:
+    # An item under sequence with the wrong rule name must fail check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_bad",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_called",  # wrong rule for sequence dim
+                "args": {"tool_name": "search_documents"},
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_bad"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'seq_bad' has no judge_spec matching the Allowed Pattern for 'sequence'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_sequence_pattern_expected_missing_tool_errors(tmp_path: Path) -> None:
+    # tool_sequence with args.expected not containing the tool surface_name
+    # must fail check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_missing",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_sequence",
+                "args": {"expected": ["some_other_tool"]},  # doesn't contain search_documents
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_missing"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'seq_missing' has no judge_spec matching the Allowed Pattern for 'sequence'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) -> None:
+    # design-inline defines 'pos_item'; filesystem dataset also defines 'pos_item'.
+    # The design-inline copy wins per Q12, but a collision warning must fire.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Create a filesystem dataset under tests/vibeval/<feature>/datasets/ that
+    # contains an item with the same id as one of the design-inline items.
+    ds_dir = feature / "datasets" / "search"
+    ds_dir.mkdir(parents=True)
+    write(ds_dir / "manifest.yaml", """
+        name: search
+        judge_specs: []
+    """)
+    write(ds_dir / "pos_item.yaml", """
+        _id: pos_item
+        user_message: "shadowed"
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "'pos_item' defined in multiple datasets" in m
+        for m in warning_messages(report)
+    )
+
+
+# --- Rule 7 check (b) — spec pattern match ---------------------------------
+
+
+def _pick(dim: str, item_id: str, filler: str) -> str:
+    """Return item_id if `filler` is the filler for the target dim, else filler."""
+    mapping = {
+        "filler_pos": "positive_selection",
+        "filler_neg": "negative_selection",
+        "filler_disambig": "disambiguation",
+        "filler_argfid": "argument_fidelity",
+        "filler_oh_a": "output_handling",
+    }
+    return item_id if mapping.get(filler) == dim else filler
+
+
+def _design_with_item(item_yaml: str, dim: str, item_id: str) -> str:
+    """Build a design.yaml that lists `item_id` under one dimension, filling
+    the other dimensions with pass-through filler items so that a single
+    dimension's pattern-match failure can be isolated."""
+    normalized = textwrap.indent(textwrap.dedent(item_yaml).strip(), "          ")
+    return f"""
+    datasets:
+      - name: "ds"
+        items:
+{normalized}
+          - id: "filler_pos"
+            data: {{}}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {{tool_name: "search_documents"}}
+          - id: "filler_neg"
+            data: {{}}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {{tool_name: "search_documents"}}
+          - id: "filler_disambig"
+            data: {{}}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {{step_type: "tool_call"}}
+                criteria: "x"
+                trap_design: "t"
+          - id: "filler_argfid"
+            data: {{}}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {{step_type: "tool_call"}}
+                criteria: "x"
+          - id: "filler_oh_a"
+            data: {{}}
+            mock_context_summary:
+              "app.tools.search_documents": "returns empty"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "filler_oh_b"
+            data: {{}}
+            mock_context_summary:
+              "app.tools.search_documents": "returns error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+
+    tool_coverage:
+      - tool_id: "search_documents"
+        dimensions_covered:
+          positive_selection: ["{_pick(dim, item_id, 'filler_pos')}"]
+          negative_selection: ["{_pick(dim, item_id, 'filler_neg')}"]
+          disambiguation: ["{_pick(dim, item_id, 'filler_disambig')}"]
+          argument_fidelity: ["{_pick(dim, item_id, 'filler_argfid')}"]
+          output_handling: ["{_pick(dim, item_id, 'filler_oh_a')}", "filler_oh_b"]
+    """
+
+
+# Positive selection — negative test
+
+def test_design_positive_selection_spec_pattern_mismatch_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_pos"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: tool_called
+          args: {tool_name: "wrong_name"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "positive_selection", "bad_pos")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'bad_pos' has no judge_spec matching the Allowed Pattern for 'positive_selection'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_negative_selection_pattern_mismatch_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_neg"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: tool_called
+          args: {tool_name: "search_documents"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "negative_selection", "bad_neg")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'negative_selection'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_missing_trap_design_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_disambig"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "tool_call"}
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_wrong_target_step_type_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_disambig2"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "ai_call"}
+          criteria: "x"
+          trap_design: "t"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig2")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_string_target_rejected(tmp_path: Path) -> None:
+    # Q5: dict form only; string shorthand not accepted.
+    item = """
+    - id: "bad_disambig3"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: "tool_call"
+          criteria: "x"
+          trap_design: "t"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig3")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_llm_form_passes(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # FULL_COVERAGE_DESIGN uses llm target=tool_call for argfid_item — must pass
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_equals_with_field_passes(tmp_path: Path) -> None:
+    item = """
+    - id: "eq_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: equals
+          args: {field: "outputs.query", expected: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "eq_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_matches_with_field_passes(tmp_path: Path) -> None:
+    item = """
+    - id: "re_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: matches
+          args: {field: "outputs.query", pattern: "^X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "re_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_contains_rejected(tmp_path: Path) -> None:
+    # Q4: strict whitelist — contains does NOT count.
+    item = """
+    - id: "bad_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: contains
+          args: {field: "outputs.query", value: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "bad_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_equals_without_field_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_argfid2"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: equals
+          args: {expected: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "bad_argfid2")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_output_handling_missing_mock_context_summary_key_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_oh"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: "output"
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "output_handling", "bad_oh")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'output_handling'" in m for m in error_messages(report))
+
+
+def test_design_output_handling_dict_target_rejected(tmp_path: Path) -> None:
+    # Q6: strict string-or-absent; dict form not accepted.
+    item = """
+    - id: "dict_oh"
+      data: {}
+      mock_context_summary:
+        "app.tools.search_documents": "returns something"
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "output"}
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "output_handling", "dict_oh")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'output_handling'" in m for m in error_messages(report))
+
+
+def test_design_happy_path_all_dimensions_pass(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+# --- subagent_delegation coverage (Q9) -----------------------------------
+
+SUBAGENT_ANALYSIS = """
+    project:
+      name: foo
+      execution_mode: "agent"
+    tools:
+      - id: "research_subagent"
+        type: "subagent"
+        source_location: "plugin/agents/research.md"
+        mock_target: "app.agents.dispatch_research"
+        surface:
+          name: "dispatch_research"
+          description: "Dispatch a research sub-agent"
+          input_schema:
+            topic: "string, required"
+          output_shape: "structured brief"
+        responsibility: "Multi-step research"
+        design_risks: []
+        siblings_to_watch: []
+        subagent_prompt_summary: "You are a research assistant."
+        subagent_expected_context:
+          - "topic"
+"""
+
+SUBAGENT_FULL_COVERAGE_DESIGN = """
+    datasets:
+      - name: "research"
+        items:
+          - id: "pos"
+            data: {}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {tool_name: "dispatch_research"}
+          - id: "neg"
+            data: {}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {tool_name: "dispatch_research"}
+          - id: "dis"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+                trap_design: "t"
+          - id: "arg"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+          - id: "oh_a"
+            data: {}
+            mock_context_summary:
+              "app.agents.dispatch_research": "returns empty findings"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "oh_b"
+            data: {}
+            mock_context_summary:
+              "app.agents.dispatch_research": "returns error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "deleg"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+
+    tool_coverage:
+      - tool_id: "research_subagent"
+        dimensions_covered:
+          positive_selection: ["pos"]
+          negative_selection: ["neg"]
+          disambiguation: ["dis"]
+          argument_fidelity: ["arg"]
+          output_handling: ["oh_a", "oh_b"]
+          subagent_delegation: ["deleg"]
+"""
+
+
+def test_design_subagent_delegation_missing_errors(tmp_path: Path) -> None:
+    # subagent_delegation is mandatory when tool.type == "subagent" (Q9)
+    feature = make_feature(tmp_path, analysis_yaml=SUBAGENT_ANALYSIS)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+
+    # Design has everything EXCEPT subagent_delegation
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(SUBAGENT_FULL_COVERAGE_DESIGN))
+    del design_dict["tool_coverage"][0]["dimensions_covered"]["subagent_delegation"]
+    add_design(feature, _yaml.safe_dump(design_dict))
+
+    validate_design(feature, analysis, report)
+    assert any(
+        "dimension 'subagent_delegation' has no items listed" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_subagent_delegation_happy_path_passes(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml=SUBAGENT_ANALYSIS)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+    add_design(feature, SUBAGENT_FULL_COVERAGE_DESIGN)
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_subagent_delegation_not_required_for_custom_tool(tmp_path: Path) -> None:
+    # A custom_tool tool should NOT have subagent_delegation flagged as mandatory.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any(
+        "subagent_delegation" in m for m in error_messages(report)
+    )
+
+
+# --- Rule 7 check (c) — output_handling multi-item constraint --------------
+
+def test_design_output_handling_single_item_errors_check_c(tmp_path: Path) -> None:
+    # Build a design with only ONE item under output_handling — all other
+    # dimensions have valid items. Check (c) must fire.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets:
+          - name: "ds"
+            items:
+              - id: "pos"
+                data: {}
+                _judge_specs:
+                  - method: rule
+                    rule: tool_called
+                    args: {tool_name: "search_documents"}
+              - id: "neg"
+                data: {}
+                _judge_specs:
+                  - method: rule
+                    rule: tool_not_called
+                    args: {tool_name: "search_documents"}
+              - id: "dis"
+                data: {}
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: {step_type: "tool_call"}
+                    criteria: "x"
+                    trap_design: "t"
+              - id: "arg"
+                data: {}
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: {step_type: "tool_call"}
+                    criteria: "x"
+              - id: "oh_only"
+                data: {}
+                mock_context_summary:
+                  "app.tools.search_documents": "returns empty"
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: "output"
+                    criteria: "x"
+
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["pos"]
+              negative_selection: ["neg"]
+              disambiguation: ["dis"]
+              argument_fidelity: ["arg"]
+              output_handling: ["oh_only"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "output_handling must span >=2 items, found 1" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_byte_equal_summaries_errors(tmp_path: Path) -> None:
+    # Both oh_empty and oh_error now carry identical summary strings.
+    design = FULL_COVERAGE_DESIGN.replace(
+        "returns HTTP 429 error",
+        "returns empty result list",
+    )
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "mock_context_summary" in m and "byte-equal" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_all_empty_summaries_errors(tmp_path: Path) -> None:
+    # Both oh_empty and oh_error have empty-string summaries; Q10 excludes
+    # empties from the distinct-count, so the check fires.
+    design = FULL_COVERAGE_DESIGN.replace(
+        '"returns empty result list"', '""'
+    ).replace(
+        '"returns HTTP 429 error"', '""'
+    )
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # The empty strings will also fail check (b) output_handling (because
+    # _coerce_mock_context_summary keeps empty strings, but the check (b)
+    # guard "tool.mock_target in item.mock_context_summary" still passes —
+    # the key exists with value "").
+    # So check (c) should fire with the distinctness error ("byte-equal").
+    assert any(
+        "byte-equal" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_distinct_summaries_passes(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_output_handling_empty_list_only_check_a_fires(tmp_path: Path) -> None:
+    # If output_handling list is absent/empty, check (a) fires "no items listed".
+    # Check (c) must NOT additionally fire with "must span >=2 items, found 0".
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any("dimension 'output_handling' has no items listed" in m for m in msgs)
+    assert not any(
+        "output_handling must span >=2" in m for m in msgs
+    ), "check (c) should not duplicate check (a)'s 'no items listed' error"
+
+
+def test_design_output_handling_all_ghost_items_no_check_c_error(tmp_path: Path) -> None:
+    # All ids under output_handling are ghosts. Check (a) fires "not found"
+    # per ghost; check (c) must stay silent to avoid double-counting.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: ["ghost1", "ghost2"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # Check (a) MUST fire for both ghost ids
+    assert any("item 'ghost1' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost2' not found in any dataset" in m for m in msgs)
+    # Check (c) MUST NOT fire with a count-based or distinctness-based error
+    assert not any(
+        "output_handling must span >=2" in m for m in msgs
+    ), f"check (c) fired spuriously with all-ghost ids: {msgs}"
+    assert not any(
+        "all empty or byte-equal" in m for m in msgs
+    ), f"check (c) distinctness fired spuriously: {msgs}"
+
+
+def test_design_output_handling_partially_resolved_oh_ids_fires_check_c(tmp_path: Path) -> None:
+    # 3 ids listed, 2 are ghosts, 1 resolves. Check (a) fires for the 2
+    # ghosts; check (c) fires "found 1" for the single resolved item.
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Replace output_handling list with [oh_empty, ghost_a, ghost_b]
+    design_dict["tool_coverage"][0]["dimensions_covered"]["output_handling"] = [
+        "oh_empty", "ghost_a", "ghost_b"
+    ]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # Check (a) for the ghosts
+    assert any("item 'ghost_a' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost_b' not found in any dataset" in m for m in msgs)
+    # Check (c) fires "found 1"
+    assert any(
+        "output_handling must span >=2 items, found 1" in m for m in msgs
+    )
+
+
+# ========================================================================
+# Integration tests through validate_feature
+# ========================================================================
+
+
+def test_validate_feature_non_agent_feature_runs_existing_checks_only(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+    """)
+    # No datasets, no design — should exit OK (with a warning about missing datasets/)
+    report = validate_feature(str(feature))
+    assert error_messages(report) == []
+    # Also verify no spurious analysis/design warnings fired
+    assert not any(
+        "analysis" in m.lower() or "design" in m.lower()
+        for m in warning_messages(report)
+    )
+
+
+def test_validate_feature_agent_feature_with_full_coverage_exit_zero(tmp_path: Path) -> None:
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = validate_feature(str(feature))
+    assert error_messages(report) == [], error_messages(report)
+    # Happy path must be fully clean — no warnings either
+    assert warning_messages(report) == [], warning_messages(report)
+
+
+def test_validate_feature_agent_feature_with_broken_coverage_exit_nonzero(tmp_path: Path) -> None:
+    # Break the positive_selection pattern: replace the correct tool_name
+    # with "wrong" so check (b) fires for positive_selection.
+    broken = FULL_COVERAGE_DESIGN.replace(
+        'tool_name: "search_documents"',
+        'tool_name: "wrong"'
+    )
+    feature, _ = make_agent_feature(tmp_path, design_yaml=broken)
+    report = validate_feature(str(feature))
+    assert len(report.errors) > 0
+    assert any("'positive_selection'" in m for m in error_messages(report))
+
+
+def test_validate_feature_missing_analysis_runs_existing_checks_silently(tmp_path: Path) -> None:
+    # Legacy empty feature: no analysis/, no design/, no datasets/, no results/.
+    feature = tmp_path / "legacy"
+    feature.mkdir()
+    report = validate_feature(str(feature))
+    # No errors from analysis or design (both absent → silent)
+    assert error_messages(report) == []
+    # There should be a warning about missing datasets/
+    assert any("No datasets/" in m for m in warning_messages(report))
+
+
+def test_validate_feature_nonexistent_feature_dir_errors(tmp_path: Path) -> None:
+    ghost = tmp_path / "not_a_feature"
+    report = validate_feature(str(ghost))
+    assert any("does not exist" in m for m in error_messages(report))
+
+
+def test_validate_feature_missing_execution_mode_errors(tmp_path: Path) -> None:
+    # analysis.yaml exists but has no execution_mode field.
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+    """)
+    report = validate_feature(str(feature))
+    assert any("project.execution_mode is required" in m for m in error_messages(report))
+
+
+# ========================================================================
+# Regression tests for external review findings
+# ========================================================================
+
+
+def test_validate_feature_malformed_dataset_item_reports_cleanly(tmp_path: Path) -> None:
+    """Bug 1: malformed dataset YAML must produce a ValidationReport, not
+    crash with yaml.ParserError. The design validator must skip filesystem
+    datasets gracefully; the datasets phase then reports the concrete error.
+    """
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Overwrite the default filesystem dataset item with genuinely broken YAML
+    bad_item = feature / "datasets" / "default" / "item.yaml"
+    bad_item.write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+    # Must not raise — must return a ValidationReport
+    report = validate_feature(str(feature))
+    # The datasets phase should report the YAML parse error
+    assert any("Invalid" in m or "YAML" in m for m in error_messages(report)), \
+        error_messages(report)
+
+
+def test_validate_analysis_tool_id_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2: a non-string tools[].id must be rejected with a clean error,
+    not crash with TypeError: unhashable type."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: [a, b]
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: "x"
+              description: "y"
+              input_schema: {}
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    # Must not raise
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "must be a string" in m for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_validate_analysis_surface_name_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2 extension: a non-string tools[].surface.name must be rejected."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "t1"
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: [a, b]
+              description: "y"
+              input_schema: {}
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "'surface.name'" in m and "must be a string" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_validate_feature_one_bad_dataset_does_not_poison_others(tmp_path: Path) -> None:
+    """Bug A: a single malformed dataset file must not cause unrelated valid
+    datasets to drop out of Rule 7 cross-reference.
+    """
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Add an UNRELATED malformed dataset alongside the existing default dataset.
+    bad_ds = feature / "datasets" / "bad"
+    bad_ds.mkdir(parents=True)
+    write(bad_ds / "manifest.yaml", """
+        name: bad
+        judge_specs: []
+    """)
+    # Genuinely broken YAML
+    (bad_ds / "item.yaml").write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+
+    report = validate_feature(str(feature))
+    msgs = error_messages(report)
+    # No false "item '<id>' not found" errors for FULL_COVERAGE_DESIGN items.
+    # FULL_COVERAGE_DESIGN is self-contained inline, so cross-reference
+    # should succeed regardless of filesystem datasets. If the per-dataset
+    # loading is broken, inline cross-reference should still pass — this
+    # test validates that the bad dataset's failure does not poison anything.
+    assert not any(
+        "'pos_item' not found" in m for m in msgs
+    ), f"false positive: pos_item marked as not found despite being inline: {msgs}"
+    # The datasets phase should surface the real parse error
+    assert any("Invalid" in m or "YAML" in m for m in msgs), msgs
+
+
+def test_validate_feature_bad_dataset_with_filesystem_items_preserves_good_ones(tmp_path: Path) -> None:
+    """Bug A stronger: one good filesystem dataset supplies the tool_coverage
+    items; an unrelated malformed dataset must not drop the good dataset's
+    items from cross-reference."""
+    # Feature with an analysis.yaml but no inline design datasets — all items
+    # come from a filesystem dataset.
+    feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+
+    # Good dataset with all mandatory-dim items
+    good_ds = feature / "datasets" / "good"
+    good_ds.mkdir(parents=True)
+    write(good_ds / "manifest.yaml", """
+        name: good
+        judge_specs: []
+    """)
+    # Write item files with the _judge_specs each dim needs
+    import json
+    (good_ds / "pos.json").write_text(json.dumps({
+        "_id": "pos",
+        "_judge_specs": [{"method": "rule", "rule": "tool_called", "args": {"tool_name": "search_documents"}}],
+    }))
+    (good_ds / "neg.json").write_text(json.dumps({
+        "_id": "neg",
+        "_judge_specs": [{"method": "rule", "rule": "tool_not_called", "args": {"tool_name": "search_documents"}}],
+    }))
+    (good_ds / "dis.json").write_text(json.dumps({
+        "_id": "dis",
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": {"step_type": "tool_call"}, "criteria": "x", "trap_design": "t"}],
+    }))
+    (good_ds / "arg.json").write_text(json.dumps({
+        "_id": "arg",
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": {"step_type": "tool_call"}, "criteria": "x"}],
+    }))
+    # Filesystem items don't carry mock_context_summary in general — but output_handling
+    # needs the key. We put it in the item's data dict; _coerce_mock_context_summary
+    # pulls it back out via item.data.get("mock_context_summary", {}).
+    (good_ds / "oh_a.json").write_text(json.dumps({
+        "_id": "oh_a",
+        "mock_context_summary": {"app.tools.search_documents": "empty list"},
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": "output", "criteria": "x"}],
+    }))
+    (good_ds / "oh_b.json").write_text(json.dumps({
+        "_id": "oh_b",
+        "mock_context_summary": {"app.tools.search_documents": "http 500 error"},
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": "output", "criteria": "x"}],
+    }))
+
+    # Unrelated malformed dataset
+    bad_ds = feature / "datasets" / "bad"
+    bad_ds.mkdir(parents=True)
+    write(bad_ds / "manifest.yaml", """
+        name: bad
+        judge_specs: []
+    """)
+    (bad_ds / "item.yaml").write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+
+    # Design references the good dataset's items
+    add_design(feature, """
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["pos"]
+              negative_selection: ["neg"]
+              disambiguation: ["dis"]
+              argument_fidelity: ["arg"]
+              output_handling: ["oh_a", "oh_b"]
+    """)
+
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # No "not found" for the good dataset's items
+    for item_id in ("pos", "neg", "dis", "arg", "oh_a", "oh_b"):
+        assert not any(
+            f"item '{item_id}' not found" in m for m in msgs
+        ), f"good-dataset item '{item_id}' was falsely dropped from cross-reference: {msgs}"
+
+
+def test_validate_design_without_analysis_warns(tmp_path: Path) -> None:
+    """Bug B / Q3: design.yaml present without analysis.yaml must warn and
+    skip cross-reference. Schema checks still run."""
+    # Create a feature with ONLY design.yaml (no analysis/analysis.yaml).
+    feature = tmp_path / "feat"
+    feature.mkdir()
+    add_design(feature, FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    # Pass analysis=None to simulate the case.
+    validate_design(feature, None, report)
+    assert any(
+        "design.yaml present but analysis.yaml missing" in m
+        for m in warning_messages(report)
+    ), warning_messages(report)
+    # And no "tool_coverage" errors since cross-reference was skipped
+    assert not any(
+        "no tool_coverage entry" in m or "dim '" in m
+        for m in error_messages(report)
+    )
+
+
+def test_validate_analysis_input_schema_wrong_type_reports_error(tmp_path: Path) -> None:
+    """Bug 2 extension: tools[].surface.input_schema must be a mapping."""
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "agent"
+        tools:
+          - id: "t1"
+            type: "custom_tool"
+            source_location: "x.py:1"
+            mock_target: "x"
+            surface:
+              name: "t1"
+              description: "y"
+              input_schema: "not a mapping"
+              output_shape: "z"
+            responsibility: "w"
+            design_risks: []
+            siblings_to_watch: []
+    """)
+    report = ValidationReport()
+    result = validate_analysis(feature, report)
+    assert result is None
+    assert any(
+        "'surface.input_schema'" in m and "must be a mapping" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_design_duplicate_tool_coverage_entry_errors(tmp_path: Path) -> None:
+    """Bug 3a: two tool_coverage entries with the same tool_id must produce
+    an error — not silently overwrite the first."""
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add a duplicate entry for search_documents
+    dup_entry = dict(design_dict["tool_coverage"][0])
+    design_dict["tool_coverage"].append(dup_entry)
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=_yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "duplicate tool_coverage entry for tool_id 'search_documents'" in m
+        for m in error_messages(report)
+    ), error_messages(report)
+
+
+def test_design_orphan_tool_coverage_entry_errors(tmp_path: Path) -> None:
+    """Bug 3b: a tool_coverage entry with a tool_id that does not match any
+    analysis.yaml:tools[].id must produce an error — not be silently ignored."""
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add an orphan entry
+    design_dict["tool_coverage"].append({
+        "tool_id": "orphan_tool",
+        "dimensions_covered": {
+            "positive_selection": ["pos_item"],
+            "negative_selection": ["neg_item"],
+            "disambiguation": ["disambig_item"],
+            "argument_fidelity": ["argfid_item"],
+            "output_handling": ["oh_empty", "oh_error"],
+        },
+    })
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=_yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "orphan_tool" in m and "no matching tool" in m
+        for m in error_messages(report)
+    ), error_messages(report)
