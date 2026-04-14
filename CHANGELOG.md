@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.0 (2026-04-14)
+
+### New Features
+
+- **CLI full validation for `analysis.yaml` and `design.yaml`.** `vibeval validate <feature>` now additionally validates the two Agent-feature authoring artifacts, turning the `vibeval-evaluator` agent's Rule 7 mechanical checks into a first-class CLI gate that runs outside the `/vibeval` workflow. The checks are a 1:1 mechanical translation of `plugin/protocol/references/07-agent-tools.md` — structural field comparison only, no semantic reasoning on prose fields, no contract.yaml coupling. `vibeval validate <feature>` returns exit 0 iff `analysis.yaml`, `design.yaml` (if present), datasets, and results all pass their respective validators.
+  - **`analysis.yaml` schema checks.** `project.execution_mode` is required (`"agent"` or `"non_agent"`). When `"agent"`, every entry of `tools[]` is schema-validated: required scalar fields (`id`, `type`, `source_location`, `mock_target`, `responsibility`) are type-checked, `surface.{name,description,output_shape}` must be strings, `surface.input_schema` must be a mapping, `design_risks[]` and `siblings_to_watch[]` must be lists (may be empty), `type: subagent` additionally requires `subagent_prompt_summary` and `subagent_expected_context: list[str]`. Duplicate `tool.id` is rejected. Wrong-type fields produce clean errors instead of crashing the CLI.
+  - **`design.yaml` schema + Rule 7 mechanical check.** `tool_coverage[]` entries are cross-referenced against `analysis.yaml:tools[]`: duplicate entries and orphan entries (whose `tool_id` matches no analysis tool) produce explicit errors. For every `(tool_id, dimension, item_id)` triple under `dimensions_covered`, the CLI verifies (a) item existence — the id must resolve to a real dataset item reachable from the design, (b) spec pattern match — the resolved item's effective `judge_specs` (item-level `_judge_specs` fully replace manifest `judge_specs` per the runtime's precedence rule) must contain at least one spec matching the dimension's Allowed Spec Pattern, and (c) for `output_handling`, the list must span ≥2 items whose `mock_context_summary[<tool.mock_target>]` string values are byte-unequal and non-empty.
+  - **Allowed Spec Patterns per dimension, strict.** `positive_selection` / `negative_selection` require `rule: tool_called` / `tool_not_called` with `args.tool_name == tool.surface.name`. `disambiguation` requires `method: llm`, `target: {step_type: "tool_call"}` (dict form only), plus a non-empty `trap_design`. `argument_fidelity` accepts either the same llm tool-call form OR `method: rule, rule: equals|matches` with `args.field` present (strict whitelist — `contains` and other rules are rejected). `output_handling` requires `method: llm, target: "output"` (or `target` omitted) AND the item's `mock_context_summary` must have a key matching `tool.mock_target` (dict-form target is rejected). `sequence` requires `rule: tool_sequence` with `args.expected` containing `tool.surface.name`. `subagent_delegation` is mandatory iff `tool.type == "subagent"` and requires the same llm tool-call form.
+  - **Partial workflow states are tolerated.** `analysis.yaml` absent → Agent checks skip silently. `analysis.yaml` present + `non_agent` → `tools[]` and `tool_coverage[]` checks skip silently. `analysis.yaml` present + `agent` + `design.yaml` absent → the design-missing warning fires. `design.yaml` present + `analysis.yaml` absent → schema checks run and a warning surfaces that cross-reference was skipped. The CLI is usable mid-workflow (after analyze but before design), in CI without a contract, and in pre-commit hooks.
+  - **Hard gate, not exception path.** Malformed YAML in a dataset file no longer crashes `validate_feature` with `yaml.ParserError` — filesystem datasets are now loaded per-entry with per-dataset `try/except`, so one bad file does not poison cross-reference for unrelated valid datasets. The bad file is surfaced by the existing dataset-phase validator, and the rest of Rule 7 continues to run.
+
+### Implementation Notes
+
+- New modules: `src/vibeval/validate_analysis.py` and `src/vibeval/validate_design.py`. `src/vibeval/validate.py`'s `validate_feature()` gained 8 lines (two function calls); the existing 685 lines are untouched.
+- CLI `--help` extended to describe the new analysis/design coverage per CLAUDE.md principle #3.
+- No protocol, skill, agent, plugin, or dataset format changes. Pure additive Python + CHANGELOG + version bumps.
+- 195 tests pass, including 149 new tests for the validator (happy path + per-dimension pattern match + all documented error categories + external-review regression tests).
+
+### Breaking Changes
+
+None. Features without `analysis/` or `design/` directories continue to validate as before. Features with `analysis/analysis.yaml` that predate 0.6.0 will now fail the validator with "project.execution_mode is required (0.6.0+)" — add the field or re-run the analyze skill.
+
 ## 0.6.1 (2026-04-14)
 
 ### Review Feedback Fixes
