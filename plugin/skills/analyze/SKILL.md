@@ -36,6 +36,15 @@ Scan the codebase for:
 
 For each call point, record: file path, function name, purpose, input/output description, mock target path.
 
+**Also determine `project.execution_mode` (required field).** Classify the project as `"agent"` or `"non_agent"` per the definition in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` (section "Project Metadata: `execution_mode`"). Operational procedure:
+
+1. Scan for tool registration sites: custom tool decorators (framework-specific), SDK-level tool parameters passed to LLM calls (e.g., `tools=[...]` in OpenAI/Anthropic chat APIs), MCP server connection configs, and sub-agent invocation patterns where the main agent delegates to another agent via a tool-like handle.
+2. If ANY such site is found → `execution_mode: "agent"`. Write the field with that value.
+3. If NO such site is found → `execution_mode: "non_agent"`. Steps 2 and 3 below (Extract Tool Inventory, Audit Tool Design) are skipped.
+4. If the classification is genuinely ambiguous (e.g., the project passes a tool list to one call but never the other; tool-like wrapper functions that don't actually use an LLM tool mechanism), do NOT silently default. Flag it in the Checkpoint output and ask the user to confirm before proceeding.
+
+Every downstream consumer — design skill, evaluator agent, consultant agent — reads this field rather than re-scanning the code. Write it exactly once; do not infer from context in later steps.
+
 ### 2. Extract Tool Inventory (Agent features only)
 
 If the codebase exposes tools to the LLM (custom tool registration, MCP server connections, or sub-agents invoked via a tool-like interface), populate a `tools[]` section in `analysis.yaml`. For non-Agent features, skip this step and the next.
@@ -116,6 +125,7 @@ project:
   name: "<project name>"
   language: "<python|typescript|go|...>"
   test_framework: "<pytest|vitest|jest|go test|...>"
+  execution_mode: "agent | non_agent"  # see 07-agent-tools.md Project Metadata section
   ai_frameworks:
     - "<openai|anthropic|langchain|...>"
 
@@ -183,9 +193,10 @@ tools:
 
 Present to the user:
 1. Summary: pipelines found, type (single-turn/multi-turn), AI calls, mock points
-2. If any pipelines were excluded as non-AI deterministic logic, list them and briefly explain why (so the user knows they weren't overlooked)
-3. Testability improvement suggestions ranked by severity
-4. **Agent features only.** Tool inventory: list of identified tools with their types, plus any high-severity design risks flagged during the audit.
-5. Ask: **"Analysis complete. Shall I proceed to design the test plan?"**
+2. **Project classification: `execution_mode`** — state whether the project is classified as `"agent"` or `"non_agent"`, and briefly name the signal(s) that drove the classification (e.g., "custom tool decorator at app/tools/search.py:42", "OpenAI chat API called with `tools=[...]` in app/bot.py:18", "no tool registrations found"). If the classification was ambiguous, explicitly ask the user to confirm the value before proceeding.
+3. If any pipelines were excluded as non-AI deterministic logic, list them and briefly explain why (so the user knows they weren't overlooked)
+4. Testability improvement suggestions ranked by severity
+5. **Agent features only** (execution_mode == "agent"). Tool inventory: list of identified tools with their types, plus any high-severity design risks flagged during the audit.
+6. Ask: **"Analysis complete. Shall I proceed to design the test plan?"**
 
 Wait for user confirmation before proceeding to the design phase.
