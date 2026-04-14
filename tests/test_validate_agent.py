@@ -482,3 +482,27 @@ def test_design_judge_spec_model_extraction() -> None:
     assert m3.target_step_type == "tool_call"
     assert m3.target_output is False
     assert m3.trap_design_nonempty is False  # empty string → False
+
+
+def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) -> None:
+    # design-inline defines 'pos_item'; filesystem dataset also defines 'pos_item'.
+    # The design-inline copy wins per Q12, but a collision warning must fire.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Create a filesystem dataset under tests/vibeval/<feature>/datasets/ that
+    # contains an item with the same id as one of the design-inline items.
+    ds_dir = feature / "datasets" / "search"
+    ds_dir.mkdir(parents=True)
+    write(ds_dir / "manifest.yaml", """
+        name: search
+        judge_specs: []
+    """)
+    write(ds_dir / "pos_item.yaml", """
+        _id: pos_item
+        user_message: "shadowed"
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "'pos_item' defined in multiple datasets" in m
+        for m in warning_messages(report)
+    )

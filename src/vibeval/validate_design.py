@@ -174,12 +174,11 @@ def _build_design_model(
             for item in ds.items:
                 if item.id in items_by_id:
                     existing = items_by_id[item.id]
-                    if existing.source != "design_inline":
-                        report.warn(
-                            path_str,
-                            f"item '{item.id}' defined in multiple datasets — "
-                            f"using {existing.dataset_name}",
-                        )
+                    report.warn(
+                        path_str,
+                        f"item '{item.id}' defined in multiple datasets — "
+                        f"using {existing.dataset_name}",
+                    )
                     # design-inline wins on collision per Q12 — skip
                     continue
                 effective = ds.effective_specs(item)
