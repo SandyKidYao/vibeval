@@ -370,7 +370,7 @@ def _any_spec_matches(item: ItemModel, dim: str, tool: ToolModel) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Rule 7 mechanical check — stub for Task 3; filled in Tasks 4-6
+# Rule 7 mechanical check
 # ---------------------------------------------------------------------------
 
 
