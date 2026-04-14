@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.1 (2026-04-14)
+
+### Review Feedback Fixes
+
+Closes 5 findings from an expert review of 0.6.0 covering the `feat/contract-phase-rewrite` and `feat/agent-tool-validation` merges. No CLI, Python, or dataset format changes; markdown-only updates to protocol, skill, and agent files.
+
+- **Tool coverage mechanical verification is now real (F1-b).** The `tool_coverage[]` invariant previously checked only that dimension keys were non-empty — placeholder item ids silently passed. `07-agent-tools.md` now defines an "Allowed Spec Patterns Per Dimension" enumeration, and the Evaluator's Rule 7 runs three mechanical checks on every `(tool_id, dimension, item_id)` triple: (a) the item must resolve to a real dataset item, (b) the item's effective `judge_specs` must contain at least one spec whose structural fields match the dimension's allowed pattern (no semantic reasoning on `criteria` or `test_intent`), and (c) for `output_handling`, the dimension list must span ≥2 items whose `mock_context_summary` strings are not byte-equal. The design skill's Tool Coverage Planning step enforces the same rules on the generator side.
+- **New required field `project.execution_mode` (F3-b).** `analysis.yaml:project` now carries an `execution_mode: "agent" | "non_agent"` field populated by the analyze skill during a single source scan. Design, evaluator, and consultant consume this field instead of re-detecting Agent features heuristically. The Evaluator's Analysis Phase Review gains a new "Tool inventory" dimension that triggers when `execution_mode == "agent"` and confirms `tools[]` plus its audit fields are present.
+- **New required field `tools[].mock_target` (F1-b / F3-b).** The tool inventory gains a `mock_target` field as the stable join key between `analysis.yaml:tools[]` and each data item's `mock_context_summary` (design) / `_mock_context` (synthesize). This is the only reliable way to correlate a tool with its mocked responses across phases.
+- **Consultant design-variant dispatch now includes `analysis.yaml` (F2).** The consultant's Agent Tool Failure Modes section depends on reading `project.execution_mode`, `tools[]`, and `design_risks[]` directly from analysis; previously the dispatch context only carried `design.yaml`, and the tool-aware review was not load-bearing.
+- **Contract save is atomic (F4).** The contract skill absorbs `rigor` inference into Phase D before the single save. Previously the contract was saved once without `rigor`, `_research.md` was deleted, then rigor was inferred and the contract was re-saved — leaving a brief window with an incomplete contract on disk and the research brief already gone.
+- **`/vibeval` evaluator iterations are rigor-aware (F5).** The orchestrator previously hardcoded max 3 evaluator iterations per phase. It now reads `contract.yaml:rigor` and applies the per-level cap: `light` → 1, `standard` → 3, `strict` → 5, with a `standard` fallback for missing/unparseable values. The stale "follow-up plan (P1)" note in `06-contract.md` is removed.
+
+### Breaking Changes
+
+None for existing datasets, results, or contracts. Two new required fields in `analysis.yaml` (`project.execution_mode`, `tools[].mock_target`) mean analyses created against 0.6.0 should be re-run before they can pass the strengthened Evaluator checks on 0.6.1 — but existing tests that don't touch the Agent-features flow are unaffected.
+
 ## 0.6.0 (2026-04-14)
 
 ### New Features
