@@ -16,7 +16,7 @@ import yaml
 
 from .dataset import Dataset, load_all_datasets
 from .validate import ValidationReport
-from .validate_analysis import AnalysisModel, ToolModel
+from .validate_analysis import AnalysisModel
 
 
 MANDATORY_DIMENSIONS = (

@@ -18,6 +18,14 @@ from vibeval.validate_analysis import (
     ToolModel,
     validate_analysis,
 )
+from vibeval.validate_design import (
+    DesignModel,
+    ItemModel,
+    JudgeSpecModel,
+    ToolCoverageModel,
+    validate_design,
+    _build_judge_spec_model,
+)
 
 
 # --- Helpers -----------------------------------------------------------------
@@ -318,15 +326,6 @@ def test_analysis_agent_mode_subagent_expected_context_must_be_list_of_strings(t
 # validate_design: loading and item flattening
 # ========================================================================
 
-from vibeval.validate_design import (
-    DesignModel,
-    ItemModel,
-    JudgeSpecModel,
-    ToolCoverageModel,
-    validate_design,
-    _build_judge_spec_model,
-)
-
 
 def add_design(feature: Path, design_yaml: str) -> None:
     write(feature / "design" / "design.yaml", design_yaml)
@@ -482,6 +481,21 @@ def test_design_judge_spec_model_extraction() -> None:
     assert m3.target_step_type == "tool_call"
     assert m3.target_output is False
     assert m3.trap_design_nonempty is False  # empty string → False
+
+    # Branch 3: target is a string but not "output" (e.g., "tool_call").
+    # Neither flag should be set — this is a malformed/unrecognized target
+    # that should NOT be interpreted as output_handling. Task 5's pattern
+    # matcher depends on this.
+    other_string = {
+        "method": "llm",
+        "scoring": "binary",
+        "target": "tool_call",
+        "criteria": "x",
+    }
+    m4 = _build_judge_spec_model(other_string)
+    assert m4.method == "llm"
+    assert m4.target_step_type is None
+    assert m4.target_output is False
 
 
 def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) -> None:
