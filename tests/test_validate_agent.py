@@ -1282,3 +1282,67 @@ def test_design_output_handling_partially_resolved_oh_ids_fires_check_c(tmp_path
     assert any(
         "output_handling must span >=2 items, found 1" in m for m in msgs
     )
+
+
+# ========================================================================
+# Integration tests through validate_feature
+# ========================================================================
+
+from vibeval.validate import validate_feature
+
+
+def test_validate_feature_non_agent_feature_runs_existing_checks_only(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+          execution_mode: "non_agent"
+    """)
+    # No datasets, no design — should exit OK (with a warning about missing datasets/)
+    report = validate_feature(str(feature))
+    assert error_messages(report) == []
+
+
+def test_validate_feature_agent_feature_with_full_coverage_exit_zero(tmp_path: Path) -> None:
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = validate_feature(str(feature))
+    assert error_messages(report) == [], error_messages(report)
+
+
+def test_validate_feature_agent_feature_with_broken_coverage_exit_nonzero(tmp_path: Path) -> None:
+    # Break the positive_selection pattern: replace the correct tool_name
+    # with "wrong" so check (b) fires for positive_selection.
+    broken = FULL_COVERAGE_DESIGN.replace(
+        'tool_name: "search_documents"',
+        'tool_name: "wrong"'
+    )
+    feature, _ = make_agent_feature(tmp_path, design_yaml=broken)
+    report = validate_feature(str(feature))
+    assert len(report.errors) > 0
+    assert any("'positive_selection'" in m for m in error_messages(report))
+
+
+def test_validate_feature_missing_analysis_runs_existing_checks_silently(tmp_path: Path) -> None:
+    # Legacy empty feature: no analysis/, no design/, no datasets/, no results/.
+    feature = tmp_path / "legacy"
+    feature.mkdir()
+    report = validate_feature(str(feature))
+    # No errors from analysis or design (both absent → silent)
+    assert error_messages(report) == []
+    # There should be a warning about missing datasets/
+    assert any("No datasets/" in m for m in warning_messages(report))
+
+
+def test_validate_feature_nonexistent_feature_dir_errors(tmp_path: Path) -> None:
+    ghost = tmp_path / "not_a_feature"
+    report = validate_feature(str(ghost))
+    assert any("does not exist" in m for m in error_messages(report))
+
+
+def test_validate_feature_missing_execution_mode_errors(tmp_path: Path) -> None:
+    # analysis.yaml exists but has no execution_mode field.
+    feature = make_feature(tmp_path, analysis_yaml="""
+        project:
+          name: foo
+    """)
+    report = validate_feature(str(feature))
+    assert any("project.execution_mode is required" in m for m in error_messages(report))
