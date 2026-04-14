@@ -42,3 +42,4 @@ All foundational definitions live here. Commands and other docs reference these,
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md`** — TestResult, Trace (turns/steps), JudgeResult, RunSummary
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/05-comparison.md`** — Pairwise comparison, position bias elimination
 - **`${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`** — Contract format: requirements, known gaps, quality criteria, feedback log
+- **`${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md`** — Agent tools: inventory entry structure, static design-audit findings, per-tool coverage matrix (applies to features with a tool catalogue)

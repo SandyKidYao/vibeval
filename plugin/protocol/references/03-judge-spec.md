@@ -41,6 +41,8 @@ Deterministic rules with fully reproducible results.
 | `max_turns` | Number of turns does not exceed limit | `max` |
 | `max_steps` | Total steps count does not exceed limit | `max` |
 
+**See also.** For Agent features, these trace rules combine with LLM specs using `target: {step_type: "tool_call"}` to form a per-tool coverage matrix. The combination is specified in `07-agent-tools.md`; this file does not introduce new trace rules for Agent features.
+
 ### Conversation Rules
 
 | Rule Name | Description | Arguments |

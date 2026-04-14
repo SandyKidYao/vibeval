@@ -13,6 +13,7 @@ Perform a thorough analysis of the codebase to prepare for test generation.
 - `tests/vibeval/{feature}/contract.yaml` — **The negotiated contract.** All analysis must address the requirements and known gaps defined here.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — Evaluation philosophy (information asymmetry + global perspective + contract)
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` — Directory structure, unified turn model
+- `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — **For Agent features only.** Tool inventory entry structure, static design-audit finding taxonomy. Consult before executing the Extract Tool Inventory and Audit Tool Design steps below.
 
 Produce analysis artifacts in `tests/vibeval/{feature}/analysis/`.
 
@@ -35,7 +36,35 @@ Scan the codebase for:
 
 For each call point, record: file path, function name, purpose, input/output description, mock target path.
 
-### 2. Determine Test Mode
+### 2. Extract Tool Inventory (Agent features only)
+
+If the codebase exposes tools to the LLM (custom tool registration, MCP server connections, or sub-agents invoked via a tool-like interface), populate a `tools[]` section in `analysis.yaml`. For non-Agent features, skip this step and the next.
+
+For each tool, record all fields from the Tool Inventory Entry Structure in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — the protocol defines the full schema and per-field semantics. The skill does not restate them.
+
+Operational guidance for the extraction itself:
+
+- **Capture `surface` verbatim.** `surface.name` and `surface.description` MUST match what the LLM actually sees at runtime, not how the tool is documented in comments, docstrings, or external docs. Read the registration site directly.
+- **For `mcp_tool` entries**, read the MCP server manifest or the connection config to discover the exposed surface — the registration is not in the project's source code.
+- **For `subagent` entries**, the `source_location` is the sub-agent's definition file (not the registration site of the tool-like handle). Also capture `subagent_prompt_summary` and `subagent_expected_context`.
+- **Leave `design_risks[]` and `siblings_to_watch[]` empty at this step.** They are populated in Step 3.
+
+### 3. Audit Tool Design (Agent features only)
+
+For each entry produced in Step 2, run a static design audit and populate `design_risks[]` and `siblings_to_watch[]`. The finding taxonomy, severity semantics, and category definitions live in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — the skill does not restate them.
+
+Operational checks to run per tool. Each check is an audit action; the criterion that determines whether a finding is recorded under the named category is defined in the protocol file. Consult `07-agent-tools.md` for the trigger conditions.
+
+1. **Read the description in isolation.** Category: `description_ambiguity`.
+2. **Walk every parameter the description implies against `input_schema`.** Category: `schema_gap`.
+3. **Pairwise compare descriptions across the inventory.** When two tools could plausibly satisfy the same user query, record mutual findings under `overlap` on both entries and populate `siblings_to_watch` on both.
+4. **Trace how the LLM would consume the tool's output shape end to end.** Category: `output_opacity`.
+5. **(Sub-agents only) Inspect the exposed description against the sub-agent's internal prompt.** Category: `subagent_prompt_leak`.
+6. **Compare the stated `responsibility` against the actual code behavior.** Category: `responsibility_drift`.
+
+Record each finding using the fields defined in the protocol. High-severity findings become required test targets in the design phase.
+
+### 4. Determine Test Mode
 
 All vibeval tests are N-turn interactions; single-turn is N=1 (see `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` for the unified model).
 
@@ -46,20 +75,20 @@ Classify each pipeline:
 Record as `type: single-turn` or `type: multi-turn` in the analysis.
 For multi-turn, also identify the chat entry point function signature.
 
-### 3. Map Data Flow
+### 5. Map Data Flow
 
 Trace how data flows through the pipeline:
 - Input source → transformations → context assembly → AI call → output parsing → final result
 - For multi-turn: how conversation history is managed, what context accumulates across turns
 
-### 4. Identify Mock Points
+### 6. Identify Mock Points
 
 For each external dependency, record:
 - The exact function/method to mock
 - The mock target path (e.g., `myapp.services.llm_client.chat`)
 - What synthetic data the mock should return
 
-### 5. Filter Non-AI Pipelines
+### 7. Filter Non-AI Pipelines
 
 Exclude any pipeline that does not produce non-deterministic AI output. A pipeline is **out of vibeval scope** if:
 - It has no AI calls (`ai_calls` is empty)
@@ -67,7 +96,7 @@ Exclude any pipeline that does not produce non-deterministic AI output. A pipeli
 
 Even if such a pipeline sits upstream of an AI pipeline (e.g., a message dispatcher that routes to an AI handler), it is deterministic logic and should be tested with standard unit tests, not vibeval. **Do not include it in the `pipelines` list.**
 
-### 6. Evaluate Testability
+### 8. Evaluate Testability
 
 Assess and suggest improvements ranked by impact:
 - **Coupling**: LLM calls embedded in business logic → extract to separate functions
@@ -131,6 +160,23 @@ suggestions:
     location: "<file:line or module>"
     issue: "<what's wrong>"
     suggestion: "<what to do>"
+
+# Agent features only. Full field definitions in 07-agent-tools.md.
+# Omit this section entirely for non-Agent features.
+tools:
+  - id: "<stable snake_case id>"
+    type: "custom_tool | mcp_tool | subagent"
+    source_location: "<file:line or MCP server/tool or subagent definition>"
+    surface:
+      name: "<LLM-facing name>"
+      description: "<LLM-facing description>"
+      input_schema:
+        <param>: "<type, required/optional, brief>"
+      output_shape: "<LLM-visible shape>"
+    responsibility: "<one-line intent>"
+    design_risks: []          # populated by Audit Tool Design (see 07-agent-tools.md for finding schema)
+    siblings_to_watch: []     # populated by Audit Tool Design; when populated: [{id: "<tool_id>", overlap_reason: "<why>"}]
+    # subagent_prompt_summary / subagent_expected_context: only for type: subagent
 ```
 
 ## Checkpoint
@@ -139,6 +185,7 @@ Present to the user:
 1. Summary: pipelines found, type (single-turn/multi-turn), AI calls, mock points
 2. If any pipelines were excluded as non-AI deterministic logic, list them and briefly explain why (so the user knows they weren't overlooked)
 3. Testability improvement suggestions ranked by severity
-4. Ask: **"Analysis complete. Shall I proceed to design the test plan?"**
+4. **Agent features only.** Tool inventory: list of identified tools with their types, plus any high-severity design risks flagged during the audit.
+5. Ask: **"Analysis complete. Shall I proceed to design the test plan?"**
 
 Wait for user confirmation before proceeding to the design phase.

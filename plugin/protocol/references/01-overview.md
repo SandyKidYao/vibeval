@@ -47,3 +47,9 @@ VibeCoding → datasets/ + tests/
            → vibeval judge {feature} {run_id}  → evaluation
            → vibeval compare {feature} run_a run_b → comparison
 ```
+
+## Agent Features
+
+For features where the AI under test is an Agent with a tool catalogue (custom tools, MCP tools, or sub-agents), `analysis.yaml` includes a top-level `tools[]` section that serves as the shared contract between the analyze and design phases. The design phase produces a corresponding `tool_coverage[]` section in `design.yaml`. See `07-agent-tools.md` for the full protocol — inventory entry structure, static design-audit finding taxonomy, and the per-tool coverage matrix.
+
+For non-Agent features, `tools[]` is omitted and the analyze/design flow is unchanged.
