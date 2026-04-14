@@ -11,7 +11,7 @@ For projects that are not Agent-style (no tool catalogue exposed to an LLM), the
 
 ## Scope: What Counts as a Tool
 
-In vibeval's meaning, a **tool** is any entity the LLM sees as a selectable action surface during execution. Three subtypes are recognized:
+In vibeval's meaning, a **tool** is any entity the LLM sees as a selectable action surface during execution. The Agent tool validation flow in this file applies only when `analysis.yaml:project.execution_mode == "agent"` (see the "Project Metadata: `execution_mode`" section below). Three subtypes are recognized:
 
 | Subtype | Description | Distinguishing trait |
 |---|---|---|
@@ -22,6 +22,19 @@ In vibeval's meaning, a **tool** is any entity the LLM sees as a selectable acti
 Pure LLM calls with no tool surface (single-shot summarization, classification, extraction, etc.) are NOT tools under this definition; they are captured by the existing `ai_calls[]` section of `analysis.yaml` and tested holistically.
 
 **Sub-agent boundary.** vibeval treats a sub-agent as a single invocation surface. It does NOT recursively test the sub-agent's own behavior under this protocol. If a feature owner wants to evaluate a sub-agent's internal behavior, they should run vibeval on the sub-agent as its own feature with its own contract.
+
+## Project Metadata: `execution_mode`
+
+`analysis.yaml:project.execution_mode` is a required field whose value determines whether the Agent tool validation flow applies. Two values are permitted:
+
+- `project.execution_mode == "agent"` — the project registers one or more tools, MCP servers, or sub-agents for LLM consumption. The analyze skill MUST populate `tools[]`; the design skill MUST produce `tool_coverage[]`; the evaluator MUST enforce the Agent-features dimensions defined in this file.
+- `"non_agent"` — no tool catalogue is exposed to any LLM. The analyze skill omits `tools[]`; the design skill skips Tool Coverage Planning; the evaluator skips Agent-features dimensions.
+
+The analyze skill determines the value by scanning the code for tool registration sites: custom tool decorators or SDK registrations (e.g., `@tool`, `ChatCompletion.create(tools=[...])`, framework-specific tool registries), MCP server connection configs, or sub-agent invocation patterns. Presence of any such site → `"agent"`. If the classification is genuinely ambiguous, the analyze skill surfaces the question at its checkpoint for the user to confirm rather than silently defaulting.
+
+Every downstream consumer (design skill, evaluator agent, consultant agent) reads `project.execution_mode` instead of re-scanning source code. This keeps the classification single-sourced and auditable.
+
+See `${CLAUDE_PLUGIN_ROOT}/protocol/references/01-overview.md` for where the field lives in the analysis.yaml schema, and `${CLAUDE_PLUGIN_ROOT}/plugin/skills/analyze/SKILL.md` for the extraction procedure.
 
 ## Tool Inventory Entry Structure
 
@@ -133,6 +146,36 @@ Each tool in the inventory induces a fixed coverage matrix. Five dimensions are 
 
 **No new judge_spec rules.** Every dimension in this matrix composes from existing `judge_spec` primitives defined in `03-judge-spec.md`. This protocol does not introduce new rules.
 
+## Allowed Spec Patterns Per Dimension
+
+The Per-Tool Coverage Matrix above names the typical `judge_spec` for each dimension as guidance. The Invariant below REQUIRES that every item registered under `tool_coverage[].dimensions_covered.<dimension>` must, in addition to existing, carry at least one `judge_spec` matching the dimension's allowed pattern from the table below. The evaluator matches these patterns mechanically — structural field comparison only, no semantic interpretation of `criteria`, `test_intent`, or free-form prose fields.
+
+| Dimension | Allowed pattern (at least one must match) |
+|---|---|
+| `positive_selection` | `method: rule`, `rule: tool_called`, `args.tool_name == <tool.surface.name>` |
+| `negative_selection` | `method: rule`, `rule: tool_not_called`, `args.tool_name == <tool.surface.name>` |
+| `disambiguation` | `method: llm`, `target: {step_type: "tool_call"}`, `trap_design` is a non-empty string |
+| `argument_fidelity` | EITHER `method: llm`, `target: {step_type: "tool_call"}`; OR `method: rule`, `rule: equals` (or `matches`), `args.field` references a step-args path |
+| `output_handling` | The item's `_mock_context` contains an entry keyed by the tool's mock target, AND the item has `method: llm`, `target: "output"` (or `target` omitted). The multi-item constraint below also applies across the full `output_handling` list. |
+| `sequence` | `method: rule`, `rule: tool_sequence`, `args.expected` contains `<tool.surface.name>` |
+| `subagent_delegation` | Applies only to tools with `type: subagent`. `method: llm`, `target: {step_type: "tool_call"}` |
+
+### Mechanical Check
+
+For every `(tool_id, dimension, item_id)` triple in `design.yaml:tool_coverage[].dimensions_covered`, the check is:
+
+1. **Item existence.** `item_id` MUST resolve to an entry in some `datasets[].items[]` reachable from the design (either inline in design.yaml's datasets section or by id reference to a dataset manifest under `tests/vibeval/{feature}/datasets/`). Unresolved ids fail the check.
+
+2. **Spec pattern match.** The resolved item's effective `judge_specs` — item-level `_judge_specs` overriding manifest-level `judge_specs` per `02-dataset.md` priority rules — MUST contain at least one spec matching one of the allowed patterns for the dimension. The match is structural: the evaluator compares `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, and the presence/non-emptiness of `trap_design` — nothing else. No interpretation of prose fields.
+
+3. **`output_handling` multi-item constraint.** In addition to (1) and (2), the full `dimensions_covered.output_handling` list MUST span at least 2 items whose `_mock_context` responses for this tool's mock target differ. A single success-case item does not satisfy the dimension, even if it matches the allowed pattern. This reflects that the dimension tests varied environment behavior (success / empty / error / malformed), not a single response.
+
+### Principle
+
+**No semantic reasoning.** The evaluator is not asked to decide whether `criteria: "the agent picks the right tool"` is a positive-selection or disambiguation check. The dimension is declared by `tool_coverage[].dimensions_covered`, and the evaluator only verifies that the referenced item carries a `judge_spec` whose structural fields match the dimension's allowed pattern. This keeps the check reproducible and prevents drift into subjective judgment.
+
+**Design skill responsibility.** Because the check is structural, the burden is on the design skill to register an item under a dimension only when a matching spec has been authored (or is being authored in the same pass). The design skill's Tool Coverage Planning step enforces this before handoff to the evaluator.
+
 ## Design Coverage Cross-Reference
 
 `tests/vibeval/{feature}/design/design.yaml` gains a top-level `tool_coverage[]` section for Agent features. One entry per tool in the inventory:
@@ -152,7 +195,7 @@ tool_coverage:
       - "<severity>/<category>: <item id> targets this risk directly"
 ```
 
-**Invariant.** At the end of the design phase, for every `analysis.yaml:tools[i]`, there exists exactly one `design.yaml:tool_coverage[j]` where `j.tool_id == i.id`, and every mandatory dimension key under `j.dimensions_covered` is non-empty. Any `high`-severity risk in `i.design_risks` must appear in `j.design_risks_addressed` with at least one referenced item.
+**Invariant.** At the end of the design phase, for every `analysis.yaml:tools[i]`, there exists exactly one `design.yaml:tool_coverage[j]` where `j.tool_id == i.id`, and every mandatory dimension under `j.dimensions_covered` satisfies the mechanical check defined in "Allowed Spec Patterns Per Dimension" above: every referenced `item_id` must resolve to a dataset item reachable from the design, and the resolved item must carry at least one `judge_spec` matching the dimension's allowed pattern. Non-empty keys alone do NOT satisfy the invariant — placeholder ids or unmatched specs fail. Any `high`-severity risk in `i.design_risks` must appear in `j.design_risks_addressed` with at least one referenced item that independently satisfies the same mechanical check.
 
 The design skill enforces this invariant during its final checklist; the Evaluator agent re-verifies it when reviewing the design phase output.
 
