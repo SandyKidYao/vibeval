@@ -12,7 +12,7 @@ import yaml
 
 import pytest
 
-from vibeval.validate import ValidationReport
+from vibeval.validate import ValidationReport, validate_feature
 from vibeval.validate_analysis import (
     AnalysisModel,
     ToolModel,
@@ -333,6 +333,17 @@ def add_design(feature: Path, design_yaml: str) -> None:
 
 def make_agent_feature(tmp_path: Path, design_yaml: str | None = None) -> tuple[Path, AnalysisModel]:
     feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    # Create minimal filesystem dataset to avoid warnings
+    ds_dir = feature / "datasets" / "default"
+    ds_dir.mkdir(parents=True, exist_ok=True)
+    write(ds_dir / "manifest.yaml", """
+        name: default
+        judge_specs: []
+    """)
+    write(ds_dir / "item.yaml", """
+        _id: item
+        user_message: "test"
+    """)
     report = ValidationReport()
     analysis = validate_analysis(feature, report)
     assert analysis is not None, error_messages(report)
@@ -1288,8 +1299,6 @@ def test_design_output_handling_partially_resolved_oh_ids_fires_check_c(tmp_path
 # Integration tests through validate_feature
 # ========================================================================
 
-from vibeval.validate import validate_feature
-
 
 def test_validate_feature_non_agent_feature_runs_existing_checks_only(tmp_path: Path) -> None:
     feature = make_feature(tmp_path, analysis_yaml="""
@@ -1300,12 +1309,19 @@ def test_validate_feature_non_agent_feature_runs_existing_checks_only(tmp_path: 
     # No datasets, no design — should exit OK (with a warning about missing datasets/)
     report = validate_feature(str(feature))
     assert error_messages(report) == []
+    # Also verify no spurious analysis/design warnings fired
+    assert not any(
+        "analysis" in m.lower() or "design" in m.lower()
+        for m in warning_messages(report)
+    )
 
 
 def test_validate_feature_agent_feature_with_full_coverage_exit_zero(tmp_path: Path) -> None:
     feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
     report = validate_feature(str(feature))
     assert error_messages(report) == [], error_messages(report)
+    # Happy path must be fully clean — no warnings either
+    assert warning_messages(report) == [], warning_messages(report)
 
 
 def test_validate_feature_agent_feature_with_broken_coverage_exit_nonzero(tmp_path: Path) -> None:
