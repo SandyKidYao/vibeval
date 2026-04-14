@@ -10,6 +10,7 @@ Traditional software testing frameworks cannot assess the quality of AI outputs;
 - Deterministic rules + LLM semantic judgment for dual-layer evaluation
 - Cross-version comparison to track quality changes over time
 - Language-agnostic: generated test code adapts to your project's framework without depending on the vibeval package
+- Per-tool validation for Agent projects (custom tools, MCP tools, sub-agents) with a 5-dimension coverage matrix enforced by the Evaluator
 
 ## Prerequisites
 
