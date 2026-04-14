@@ -437,7 +437,9 @@ def test_design_inline_dataset_items_resolved(tmp_path: Path) -> None:
     feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
     report = ValidationReport()
     validate_design(feature, analysis, report)
-    # _run_rule_7 is a stub in Task 3 — we only verify the model loads cleanly.
+    # FULL_COVERAGE_DESIGN satisfies check (a) item existence, check (b)
+    # pattern match for all mandatory dims, and check (c) output_handling
+    # multi-item constraint (once Task 6 lands).
     assert error_messages(report) == []
 
 
@@ -592,4 +594,439 @@ def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) 
     assert any(
         "'pos_item' defined in multiple datasets" in m
         for m in warning_messages(report)
+    )
+
+
+# --- Rule 7 check (b) — spec pattern match ---------------------------------
+
+
+def _pick(dim: str, item_id: str, filler: str) -> str:
+    """Return item_id if `filler` is the filler for the target dim, else filler."""
+    mapping = {
+        "filler_pos": "positive_selection",
+        "filler_neg": "negative_selection",
+        "filler_disambig": "disambiguation",
+        "filler_argfid": "argument_fidelity",
+        "filler_oh_a": "output_handling",
+    }
+    return item_id if mapping.get(filler) == dim else filler
+
+
+def _design_with_item(item_yaml: str, dim: str, item_id: str) -> str:
+    """Build a design.yaml that lists `item_id` under one dimension, filling
+    the other dimensions with pass-through filler items so that a single
+    dimension's pattern-match failure can be isolated."""
+    normalized = textwrap.indent(textwrap.dedent(item_yaml).strip(), "          ")
+    return f"""
+    datasets:
+      - name: "ds"
+        items:
+{normalized}
+          - id: "filler_pos"
+            data: {{}}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {{tool_name: "search_documents"}}
+          - id: "filler_neg"
+            data: {{}}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {{tool_name: "search_documents"}}
+          - id: "filler_disambig"
+            data: {{}}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {{step_type: "tool_call"}}
+                criteria: "x"
+                trap_design: "t"
+          - id: "filler_argfid"
+            data: {{}}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {{step_type: "tool_call"}}
+                criteria: "x"
+          - id: "filler_oh_a"
+            data: {{}}
+            mock_context_summary:
+              "app.tools.search_documents": "returns empty"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "filler_oh_b"
+            data: {{}}
+            mock_context_summary:
+              "app.tools.search_documents": "returns error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+
+    tool_coverage:
+      - tool_id: "search_documents"
+        dimensions_covered:
+          positive_selection: ["{_pick(dim, item_id, 'filler_pos')}"]
+          negative_selection: ["{_pick(dim, item_id, 'filler_neg')}"]
+          disambiguation: ["{_pick(dim, item_id, 'filler_disambig')}"]
+          argument_fidelity: ["{_pick(dim, item_id, 'filler_argfid')}"]
+          output_handling: ["{_pick(dim, item_id, 'filler_oh_a')}", "filler_oh_b"]
+    """
+
+
+# Positive selection — negative test
+
+def test_design_positive_selection_spec_pattern_mismatch_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_pos"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: tool_called
+          args: {tool_name: "wrong_name"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "positive_selection", "bad_pos")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'bad_pos' has no judge_spec matching the Allowed Pattern for 'positive_selection'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_negative_selection_pattern_mismatch_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_neg"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: tool_called
+          args: {tool_name: "search_documents"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "negative_selection", "bad_neg")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'negative_selection'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_missing_trap_design_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_disambig"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "tool_call"}
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_wrong_target_step_type_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_disambig2"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "ai_call"}
+          criteria: "x"
+          trap_design: "t"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig2")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_disambiguation_string_target_rejected(tmp_path: Path) -> None:
+    # Q5: dict form only; string shorthand not accepted.
+    item = """
+    - id: "bad_disambig3"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: "tool_call"
+          criteria: "x"
+          trap_design: "t"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "disambiguation", "bad_disambig3")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'disambiguation'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_llm_form_passes(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # FULL_COVERAGE_DESIGN uses llm target=tool_call for argfid_item — must pass
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_equals_with_field_passes(tmp_path: Path) -> None:
+    item = """
+    - id: "eq_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: equals
+          args: {field: "outputs.query", expected: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "eq_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_matches_with_field_passes(tmp_path: Path) -> None:
+    item = """
+    - id: "re_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: matches
+          args: {field: "outputs.query", pattern: "^X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "re_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_contains_rejected(tmp_path: Path) -> None:
+    # Q4: strict whitelist — contains does NOT count.
+    item = """
+    - id: "bad_argfid"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: contains
+          args: {field: "outputs.query", value: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "bad_argfid")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_argument_fidelity_rule_equals_without_field_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_argfid2"
+      data: {}
+      _judge_specs:
+        - method: rule
+          rule: equals
+          args: {expected: "X"}
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "argument_fidelity", "bad_argfid2")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'argument_fidelity'" in m for m in error_messages(report))
+
+
+def test_design_output_handling_missing_mock_context_summary_key_errors(tmp_path: Path) -> None:
+    item = """
+    - id: "bad_oh"
+      data: {}
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: "output"
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "output_handling", "bad_oh")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'output_handling'" in m for m in error_messages(report))
+
+
+def test_design_output_handling_dict_target_rejected(tmp_path: Path) -> None:
+    # Q6: strict string-or-absent; dict form not accepted.
+    item = """
+    - id: "dict_oh"
+      data: {}
+      mock_context_summary:
+        "app.tools.search_documents": "returns something"
+      _judge_specs:
+        - method: llm
+          scoring: binary
+          target: {step_type: "output"}
+          criteria: "x"
+    """
+    feature, analysis = make_agent_feature(
+        tmp_path, design_yaml=_design_with_item(item, "output_handling", "dict_oh")
+    )
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any("'output_handling'" in m for m in error_messages(report))
+
+
+def test_design_happy_path_all_dimensions_pass(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+# --- subagent_delegation coverage (Q9) -----------------------------------
+
+SUBAGENT_ANALYSIS = """
+    project:
+      name: foo
+      execution_mode: "agent"
+    tools:
+      - id: "research_subagent"
+        type: "subagent"
+        source_location: "plugin/agents/research.md"
+        mock_target: "app.agents.dispatch_research"
+        surface:
+          name: "dispatch_research"
+          description: "Dispatch a research sub-agent"
+          input_schema:
+            topic: "string, required"
+          output_shape: "structured brief"
+        responsibility: "Multi-step research"
+        design_risks: []
+        siblings_to_watch: []
+        subagent_prompt_summary: "You are a research assistant."
+        subagent_expected_context:
+          - "topic"
+"""
+
+SUBAGENT_FULL_COVERAGE_DESIGN = """
+    datasets:
+      - name: "research"
+        items:
+          - id: "pos"
+            data: {}
+            _judge_specs:
+              - method: rule
+                rule: tool_called
+                args: {tool_name: "dispatch_research"}
+          - id: "neg"
+            data: {}
+            _judge_specs:
+              - method: rule
+                rule: tool_not_called
+                args: {tool_name: "dispatch_research"}
+          - id: "dis"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+                trap_design: "t"
+          - id: "arg"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+          - id: "oh_a"
+            data: {}
+            mock_context_summary:
+              "app.agents.dispatch_research": "returns empty findings"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "oh_b"
+            data: {}
+            mock_context_summary:
+              "app.agents.dispatch_research": "returns error"
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: "output"
+                criteria: "x"
+          - id: "deleg"
+            data: {}
+            _judge_specs:
+              - method: llm
+                scoring: binary
+                target: {step_type: "tool_call"}
+                criteria: "x"
+
+    tool_coverage:
+      - tool_id: "research_subagent"
+        dimensions_covered:
+          positive_selection: ["pos"]
+          negative_selection: ["neg"]
+          disambiguation: ["dis"]
+          argument_fidelity: ["arg"]
+          output_handling: ["oh_a", "oh_b"]
+          subagent_delegation: ["deleg"]
+"""
+
+
+def test_design_subagent_delegation_missing_errors(tmp_path: Path) -> None:
+    # subagent_delegation is mandatory when tool.type == "subagent" (Q9)
+    feature = make_feature(tmp_path, analysis_yaml=SUBAGENT_ANALYSIS)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+
+    # Design has everything EXCEPT subagent_delegation
+    import yaml as _yaml
+    design_dict = _yaml.safe_load(textwrap.dedent(SUBAGENT_FULL_COVERAGE_DESIGN))
+    del design_dict["tool_coverage"][0]["dimensions_covered"]["subagent_delegation"]
+    add_design(feature, _yaml.safe_dump(design_dict))
+
+    validate_design(feature, analysis, report)
+    assert any(
+        "dimension 'subagent_delegation' has no items listed" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_subagent_delegation_happy_path_passes(tmp_path: Path) -> None:
+    feature = make_feature(tmp_path, analysis_yaml=SUBAGENT_ANALYSIS)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+    add_design(feature, SUBAGENT_FULL_COVERAGE_DESIGN)
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_subagent_delegation_not_required_for_custom_tool(tmp_path: Path) -> None:
+    # A custom_tool tool should NOT have subagent_delegation flagged as mandatory.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert not any(
+        "subagent_delegation" in m for m in error_messages(report)
     )

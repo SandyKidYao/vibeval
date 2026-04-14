@@ -16,7 +16,7 @@ import yaml
 
 from .dataset import Dataset, load_all_datasets
 from .validate import ValidationReport
-from .validate_analysis import AnalysisModel
+from .validate_analysis import AnalysisModel, ToolModel
 
 
 MANDATORY_DIMENSIONS = (
@@ -314,6 +314,62 @@ def _build_judge_spec_model(raw: dict) -> JudgeSpecModel:
 
 
 # ---------------------------------------------------------------------------
+# Rule 7 check (b) — spec pattern match
+# ---------------------------------------------------------------------------
+
+
+def _any_spec_matches(item: ItemModel, dim: str, tool: ToolModel) -> bool:
+    """Structural match: one case per dimension from the Allowed Spec Patterns
+    table in 07-agent-tools.md. No prose interpretation — only method, rule,
+    target.step_type, target_output, args.tool_name, args.field presence,
+    args.expected, and trap_design presence/non-emptiness are inspected.
+    """
+    for spec in item.effective_specs:
+        if dim == "positive_selection":
+            if (spec.method == "rule" and spec.rule == "tool_called"
+                    and spec.args_tool_name == tool.surface_name):
+                return True
+
+        elif dim == "negative_selection":
+            if (spec.method == "rule" and spec.rule == "tool_not_called"
+                    and spec.args_tool_name == tool.surface_name):
+                return True
+
+        elif dim == "disambiguation":
+            if (spec.method == "llm" and spec.target_step_type == "tool_call"
+                    and spec.trap_design_nonempty):
+                return True
+
+        elif dim == "argument_fidelity":
+            if spec.method == "llm" and spec.target_step_type == "tool_call":
+                return True
+            if (spec.method == "rule" and spec.rule in ("equals", "matches")
+                    and spec.args_field_present):
+                return True
+
+        elif dim == "output_handling":
+            # target: "output" (string) or target key absent, AND the item
+            # must have a mock_context_summary entry keyed by tool.mock_target.
+            # target_step_type must be None (dict form is rejected per Q6).
+            if (spec.method == "llm" and spec.target_output
+                    and spec.target_step_type is None
+                    and tool.mock_target in item.mock_context_summary):
+                return True
+
+        elif dim == "sequence":
+            if spec.method == "rule" and spec.rule == "tool_sequence":
+                expected = spec.args_expected
+                if isinstance(expected, list) and tool.surface_name in expected:
+                    return True
+
+        elif dim == "subagent_delegation":
+            if spec.method == "llm" and spec.target_step_type == "tool_call":
+                return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Rule 7 mechanical check — stub for Task 3; filled in Tasks 4-6
 # ---------------------------------------------------------------------------
 
@@ -356,7 +412,12 @@ def _run_rule_7(
                         f"not found in any dataset",
                     )
                     continue
-                # Check (b) — spec pattern match — added in Task 5
+                if not _any_spec_matches(item, dim, tool):
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' dim '{dim}' item '{item_id}' "
+                        f"has no judge_spec matching the Allowed Pattern for '{dim}'",
+                    )
 
         # Check (c) — output_handling multi-item constraint — added in Task 6
 
@@ -372,4 +433,9 @@ def _run_rule_7(
                     f"not found in any dataset",
                 )
                 continue
-            # Check (b) for sequence — added in Task 5
+            if not _any_spec_matches(item, "sequence", tool):
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dim 'sequence' item '{item_id}' "
+                    f"has no judge_spec matching the Allowed Pattern for 'sequence'",
+                )
