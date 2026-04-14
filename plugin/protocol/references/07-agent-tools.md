@@ -126,7 +126,7 @@ Each tool in the inventory induces a fixed coverage matrix. Five dimensions are 
 | 2 | Negative selection | Yes | All tools | `method: rule`, `rule: tool_not_called`, `args: {tool_name: <surface.name>}`. The containing data item describes a scenario where this tool should NOT be called (no tool needed, or a different tool is appropriate). |
 | 3 | Disambiguation | Yes | All tools | `method: llm`, `target: {step_type: "tool_call"}`, with `trap_design` describing the ambiguity. When `siblings_to_watch` is non-empty, the ambiguity should involve one of those siblings. When empty, the ambiguity can involve a plausible-but-wrong general-purpose alternative (e.g., answering from parametric memory). |
 | 4 | Argument fidelity | Yes | All tools | `method: llm`, `target: {step_type: "tool_call"}`, evaluating whether the constructed arguments faithfully reflect the user's intent. When arguments are fully deterministic from the input, a `method: rule`, `rule: equals` spec on the relevant step-args field MAY be used instead. |
-| 5 | Output handling | Yes | All tools | Varied `_mock_context` responses (success, empty, error, malformed) across different data items, evaluated by `method: llm`, `target: "output"` specs that check whether the downstream behavior is appropriate for each response variant. |
+| 5 | Output handling | Yes | All tools | Varied `_mock_context` responses (success, empty, error, malformed) across different data items, evaluated by `method: llm`, `target: "output"` specs that check whether the downstream behavior is appropriate for each response variant. (This row describes the test intent; for the evaluator's mechanical check see "Allowed Spec Patterns Per Dimension" below — the Design Phase check operates on `mock_context_summary`, not the full `_mock_context`.) |
 | 6 | Sequence / composition | Conditional | Only when this tool has a documented ordering dependency with another tool | `method: rule`, `rule: tool_sequence`, `args: {expected: [...]}`. |
 | 7 | Sub-agent delegation | Conditional | Only when `type: subagent` | `method: llm`, `target: {step_type: "tool_call"}`, evaluating whether the main agent delegated at the right moment AND whether it passed all items listed in `subagent_expected_context`. |
 
@@ -216,6 +216,7 @@ tools:
   - id: "search_documents"
     type: "custom_tool"
     source_location: "app/tools/search.py:42"
+    mock_target: "app.tools.search_documents"
     surface:
       name: "search_documents"
       description: "Search internal documents by keyword"
@@ -241,6 +242,7 @@ tools:
   - id: "research_subagent"
     type: "subagent"
     source_location: "plugin/agents/research.md"
+    mock_target: "app.agents.dispatch_research"
     surface:
       name: "dispatch_research"
       description: "Dispatch a research sub-agent to investigate a topic in depth"
