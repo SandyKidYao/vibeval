@@ -50,6 +50,11 @@ VibeCoding → datasets/ + tests/
 
 ## Agent Features
 
-For features where the AI under test is an Agent with a tool catalogue (custom tools, MCP tools, or sub-agents), `analysis.yaml` includes a top-level `tools[]` section that serves as the shared contract between the analyze and design phases. The design phase produces a corresponding `tool_coverage[]` section in `design.yaml`. See `07-agent-tools.md` for the full protocol — inventory entry structure, static design-audit finding taxonomy, and the per-tool coverage matrix.
+`analysis.yaml` carries a required `project.execution_mode` field with two allowed values:
 
-For non-Agent features, `tools[]` is omitted and the analyze/design flow is unchanged.
+- `"agent"` — the project registers tools (custom function tools, MCP tools, or sub-agents) for LLM consumption. `analysis.yaml` MUST include a top-level `tools[]` inventory and `design.yaml` MUST include a corresponding `tool_coverage[]` cross-reference. The Agent-features flow in `07-agent-tools.md` applies.
+- `"non_agent"` — no tool catalogue is exposed. `tools[]` and `tool_coverage[]` are omitted, and the analyze/design flow runs without the Agent-features dimensions.
+
+The analyze skill determines the value once, by scanning the source for tool registration sites; every downstream consumer (design, evaluator, consultant) reads `project.execution_mode` instead of re-scanning.
+
+See `07-agent-tools.md` for the full Agent-features protocol: tool inventory entry structure, static design-audit finding taxonomy, per-tool coverage matrix, Allowed Spec Patterns Per Dimension, and the strengthened `tool_coverage[]` invariant.

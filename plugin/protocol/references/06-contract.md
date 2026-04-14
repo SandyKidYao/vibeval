@@ -154,7 +154,7 @@ The `rigor` field controls how thoroughly downstream phases execute. It is infer
 | `standard` | Default | Current behavior — evaluator max 3 iterations, full phase sequence, all severity levels reported |
 | `strict` | High-stakes features with rich external context (PRD, historical bad cases, compliance requirements) | Extended dialogue until convergence; evaluator iteration cap raised to 5; all phases run independently; no shortcuts |
 
-The contract skill writes the inferred level into `rigor` and explains it to the user for confirmation. Phase skills that honor `rigor` will be updated in a follow-up plan (P1).
+The contract skill writes the inferred level into `rigor` and explains it to the user for confirmation. The `/vibeval` orchestrator reads `rigor` to cap evaluator iterations per phase (see `${CLAUDE_PLUGIN_ROOT}/commands/vibeval.md`). Individual phase skills may read `rigor` for additional behavior (e.g., light-rigor dialogue compression, evaluator severity filtering) as they are updated over time.
 
 ## Contract Lifecycle
 

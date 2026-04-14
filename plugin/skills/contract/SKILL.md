@@ -67,16 +67,16 @@ Run a turn-by-turn dialogue. Apply these rules strictly:
 **Stop conditions** (stop when ANY is met):
 - User explicitly says "enough" / "let's move on" / "我们开始下一步".
 - All high-priority seed questions from the brief have been addressed AND two consecutive turns produced no new dimensions.
-- The rigor minimum for the inferred level (Phase E) has been met AND the user seems uninterested in further questions.
+- The rigor minimum for the level you will infer at Phase D (see "Rigor-aware minimums" below) has been met AND the user seems uninterested in further questions.
 
 **Rigor-aware minimums** (enforce to prevent premature stopping):
 - `light`: at least 3 questions answered AND one summary round completed.
 - `standard`: at least 5 questions answered AND two summary rounds completed.
 - `strict`: no minimum — continue until genuine convergence.
 
-If you don't yet know the rigor level (Phase E runs at the end), assume `standard` minimums during the dialogue.
+If you don't yet know the rigor level (it is inferred at Phase D, after the dialogue completes), assume `standard` minimums during the dialogue.
 
-### Phase D: Draft and Approve
+### Phase D: Draft, Infer Rigor, and Save
 
 1. **Draft `contract.yaml`** from the dialogue transcript. Apply these rules:
 
@@ -98,40 +98,31 @@ If you don't yet know the rigor level (Phase E runs at the end), assume `standar
    - If the user emphasized specific dimensions (e.g., "I really care about language handling"), set the corresponding `user_emphasis` field.
    - Otherwise, use defaults from the protocol reference.
 
-4. **Show the draft to the user**:
+4. **Infer `rigor`** (if the user has not explicitly set it). This is folded into the draft so the contract is saved exactly once, with `rigor` populated from the start.
 
-   > Here's the contract I've drafted based on our discussion. Let me know if anything is wrong, missing, or should be emphasized differently.
-   >
-   > [paste the full YAML]
+   a. **Check code footprint**: count LOC of files referenced by `analysis/analysis.yaml` if it exists, or estimate from the feature's source directory. Threshold: <200 LOC → lean toward `light`; ≥200 LOC → lean toward `standard`.
 
-5. **If the user has edits**, apply them, show the updated draft, and ask again. Loop until the user confirms.
+   b. **Check external context**: during the dialogue, did the user mention a PRD, historical bad cases, compliance requirements, or production feedback? If yes → lean toward `standard` or `strict` regardless of code size.
 
-6. **When the user confirms**:
-   - Save to `tests/vibeval/{feature}/contract.yaml`.
-   - Delete `tests/vibeval/{feature}/_research.md`.
-
-### Phase E: Rigor Inference
-
-If the user has not explicitly set a rigor level, infer it now:
-
-1. **Check code footprint**: count LOC of files referenced by `analysis/analysis.yaml` if it exists, or estimate from the feature's source directory. Threshold: <200 LOC → lean toward `light`; ≥200 LOC → lean toward `standard`.
-
-2. **Check external context**: during the dialogue, did the user mention a PRD, historical bad cases, compliance requirements, or production feedback? If yes → lean toward `standard` or `strict` regardless of code size.
-
-3. **Combine**:
+   c. **Combine**:
    - `<200 LOC AND no external context` → suggest `light`.
    - `<200 LOC AND external context` → suggest `standard`.
    - `≥200 LOC AND no external context` → suggest `standard`.
    - `≥200 LOC AND rich external context AND user expressed high stakes` → suggest `strict`.
 
-4. **Confirm with user**:
+   Write the inferred level into the in-memory draft's `rigor` field. Do not save yet.
 
-   > Based on the feature size (~<N> LOC) and our discussion, I'd suggest running vibeval at rigor = `<level>`. This means:
-   > - <one-line description of what that entails downstream>
+5. **Show the draft to the user** (including the inferred `rigor`):
+
+   > Here's the contract I've drafted based on our discussion, including a suggested rigor level of `<level>` (meaning: <one-line description of what that entails downstream>). Let me know if anything is wrong, missing, or should be emphasized differently — including whether you want to override the rigor.
    >
-   > Sound right, or do you want to override?
+   > [paste the full YAML]
 
-5. Record `rigor` in `contract.yaml` and re-save.
+6. **If the user has edits**, apply them (including any `rigor` override), show the updated draft, and ask again. Loop until the user confirms.
+
+7. **When the user confirms, save and clean up in this order**:
+   - Save the complete draft to `tests/vibeval/{feature}/contract.yaml` **exactly once** — this single write includes requirements, known_gaps, quality_criteria, AND `rigor`. No intermediate state on disk.
+   - Delete `tests/vibeval/{feature}/_research.md`.
 
 ## Checkpoint
 
@@ -157,4 +148,4 @@ If `tests/vibeval/{feature}/contract.yaml` already exists:
    - Updated quality criteria or user emphasis update the relevant fields.
    - Bump `updated:` to today's date.
    - Append an entry to `feedback_log` recording this update round.
-5. Save. Skip Phase E (rigor) unless the user explicitly wants to revisit it.
+5. Save. Skip rigor re-inference unless the user explicitly wants to revisit it.

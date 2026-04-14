@@ -106,7 +106,7 @@ Delegate to vibeval-evaluator agent       │
   (review output against contract)        │
         │                                 │
         ├── Issues found → Feed back ─────┘
-        │   (max 3 iterations per phase)
+        │   (iterations capped per contract.yaml:rigor — see below)
         │
         └── All pass → Checkpoint
                 │
@@ -155,7 +155,12 @@ After each phase (Analyze, Design, Generate) produces its output:
 2. **Process the evaluator's review**:
    - If all dimensions score 2 (pass): proceed to checkpoint
    - If any dimension scores 0 or 1: address the feedback, re-execute the phase, re-evaluate
-   - Maximum 3 evaluator iterations per phase to avoid infinite loops
+   - Maximum evaluator iterations per phase is determined by `contract.yaml:rigor`:
+     - `light` → 1 iteration
+     - `standard` → 3 iterations
+     - `strict` → 5 iterations
+     
+     If the contract's `rigor` field is missing or unparseable, fall back to `standard` (3 iterations). See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md` for the `rigor` field definition.
 
 3. **At the checkpoint**, present to the user:
    - Phase output summary
