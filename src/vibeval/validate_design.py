@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from .dataset import Dataset, load_all_datasets
+from .dataset import Dataset, load_dataset
 from .validate import ValidationReport
 from .validate_analysis import AnalysisModel, ToolModel
 
@@ -107,8 +107,15 @@ def validate_design(
 
     design = _build_design_model(raw, feature_dir, path_str, report)
 
-    if analysis is None or analysis.execution_mode != "agent":
-        return  # schema checks still ran; mechanical check skipped
+    if analysis is None:
+        report.warn(
+            path_str,
+            "design.yaml present but analysis.yaml missing; "
+            "skipping tool_coverage cross-reference",
+        )
+        return
+    if analysis.execution_mode != "agent":
+        return  # non_agent: schema-only, no tool_coverage cross-reference
 
     _run_rule_7(analysis, design, report)
 
@@ -166,23 +173,31 @@ def _build_design_model(
                 continue
             items_by_id[iid] = item_model
 
-    # 2. Filesystem datasets (reuse existing loader for Q7 consistency).
-    # load_all_datasets can raise on malformed YAML/JSON (parser has no
-    # try/except). If it does, skip filesystem cross-reference — the
-    # subsequent _validate_datasets phase will surface the concrete per-file
-    # parse errors.
+    # 2. Filesystem datasets. Iterate per-dataset so that one malformed
+    # dataset file does not poison cross-reference for the other datasets
+    # (load_all_datasets aborts on the first parse error). Bad datasets
+    # are skipped here with a soft warning; the downstream _validate_datasets
+    # phase will surface the concrete per-file parse error.
     datasets_dir = feature_dir / "datasets"
     if datasets_dir.exists():
-        try:
-            fs_datasets: dict[str, Dataset] = load_all_datasets(str(datasets_dir))
-        except Exception as e:
-            report.warn(
-                path_str,
-                f"could not load filesystem datasets for cross-reference "
-                f"({type(e).__name__}); the datasets phase will report the details",
-            )
-            fs_datasets = {}
-        for ds_name, ds in fs_datasets.items():
+        for p in sorted(datasets_dir.iterdir()):
+            is_dataset_entry = False
+            if p.is_dir() and not p.name.startswith("."):
+                is_dataset_entry = True
+            elif p.suffix in (".json", ".yaml", ".yml"):
+                is_dataset_entry = True
+            if not is_dataset_entry:
+                continue
+            try:
+                ds = load_dataset(p)
+            except Exception as e:
+                report.warn(
+                    path_str,
+                    f"could not load dataset '{p.name}' for cross-reference "
+                    f"({type(e).__name__}); the datasets phase will report the details",
+                )
+                continue
+            ds_name = ds.name
             for item in ds.items:
                 if item.id in items_by_id:
                     existing = items_by_id[item.id]
@@ -194,9 +209,6 @@ def _build_design_model(
                     # design-inline wins on collision per Q12 — skip
                     continue
                 effective = ds.effective_specs(item)
-                # mock_context_summary MAY exist in filesystem items as a leftover
-                # data field, but synthesize-phase items use _mock_context instead.
-                # Extract from data dict if present; otherwise empty.
                 mcs_raw = item.data.get("mock_context_summary", {})
                 mcs = _coerce_mock_context_summary(mcs_raw)
                 items_by_id[item.id] = ItemModel(

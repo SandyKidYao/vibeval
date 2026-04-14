@@ -1444,6 +1444,137 @@ def test_validate_analysis_surface_name_wrong_type_reports_error(tmp_path: Path)
     ), error_messages(report)
 
 
+def test_validate_feature_one_bad_dataset_does_not_poison_others(tmp_path: Path) -> None:
+    """Bug A: a single malformed dataset file must not cause unrelated valid
+    datasets to drop out of Rule 7 cross-reference.
+    """
+    feature, _ = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    # Add an UNRELATED malformed dataset alongside the existing default dataset.
+    bad_ds = feature / "datasets" / "bad"
+    bad_ds.mkdir(parents=True)
+    write(bad_ds / "manifest.yaml", """
+        name: bad
+        judge_specs: []
+    """)
+    # Genuinely broken YAML
+    (bad_ds / "item.yaml").write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+
+    report = validate_feature(str(feature))
+    msgs = error_messages(report)
+    # No false "item '<id>' not found" errors for FULL_COVERAGE_DESIGN items.
+    # FULL_COVERAGE_DESIGN is self-contained inline, so cross-reference
+    # should succeed regardless of filesystem datasets. If the per-dataset
+    # loading is broken, inline cross-reference should still pass — this
+    # test validates that the bad dataset's failure does not poison anything.
+    assert not any(
+        "'pos_item' not found" in m for m in msgs
+    ), f"false positive: pos_item marked as not found despite being inline: {msgs}"
+    # The datasets phase should surface the real parse error
+    assert any("Invalid" in m or "YAML" in m for m in msgs), msgs
+
+
+def test_validate_feature_bad_dataset_with_filesystem_items_preserves_good_ones(tmp_path: Path) -> None:
+    """Bug A stronger: one good filesystem dataset supplies the tool_coverage
+    items; an unrelated malformed dataset must not drop the good dataset's
+    items from cross-reference."""
+    # Feature with an analysis.yaml but no inline design datasets — all items
+    # come from a filesystem dataset.
+    feature = make_feature(tmp_path, analysis_yaml=AGENT_HAPPY)
+    report = ValidationReport()
+    analysis = validate_analysis(feature, report)
+    assert analysis is not None, error_messages(report)
+
+    # Good dataset with all mandatory-dim items
+    good_ds = feature / "datasets" / "good"
+    good_ds.mkdir(parents=True)
+    write(good_ds / "manifest.yaml", """
+        name: good
+        judge_specs: []
+    """)
+    # Write item files with the _judge_specs each dim needs
+    import json
+    (good_ds / "pos.json").write_text(json.dumps({
+        "_id": "pos",
+        "_judge_specs": [{"method": "rule", "rule": "tool_called", "args": {"tool_name": "search_documents"}}],
+    }))
+    (good_ds / "neg.json").write_text(json.dumps({
+        "_id": "neg",
+        "_judge_specs": [{"method": "rule", "rule": "tool_not_called", "args": {"tool_name": "search_documents"}}],
+    }))
+    (good_ds / "dis.json").write_text(json.dumps({
+        "_id": "dis",
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": {"step_type": "tool_call"}, "criteria": "x", "trap_design": "t"}],
+    }))
+    (good_ds / "arg.json").write_text(json.dumps({
+        "_id": "arg",
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": {"step_type": "tool_call"}, "criteria": "x"}],
+    }))
+    # Filesystem items don't carry mock_context_summary in general — but output_handling
+    # needs the key. We put it in the item's data dict; _coerce_mock_context_summary
+    # pulls it back out via item.data.get("mock_context_summary", {}).
+    (good_ds / "oh_a.json").write_text(json.dumps({
+        "_id": "oh_a",
+        "mock_context_summary": {"app.tools.search_documents": "empty list"},
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": "output", "criteria": "x"}],
+    }))
+    (good_ds / "oh_b.json").write_text(json.dumps({
+        "_id": "oh_b",
+        "mock_context_summary": {"app.tools.search_documents": "http 500 error"},
+        "_judge_specs": [{"method": "llm", "scoring": "binary", "target": "output", "criteria": "x"}],
+    }))
+
+    # Unrelated malformed dataset
+    bad_ds = feature / "datasets" / "bad"
+    bad_ds.mkdir(parents=True)
+    write(bad_ds / "manifest.yaml", """
+        name: bad
+        judge_specs: []
+    """)
+    (bad_ds / "item.yaml").write_text(": this is not valid\n\t\t\nbroken: [unclosed\n  - x\n")
+
+    # Design references the good dataset's items
+    add_design(feature, """
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["pos"]
+              negative_selection: ["neg"]
+              disambiguation: ["dis"]
+              argument_fidelity: ["arg"]
+              output_handling: ["oh_a", "oh_b"]
+    """)
+
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    # No "not found" for the good dataset's items
+    for item_id in ("pos", "neg", "dis", "arg", "oh_a", "oh_b"):
+        assert not any(
+            f"item '{item_id}' not found" in m for m in msgs
+        ), f"good-dataset item '{item_id}' was falsely dropped from cross-reference: {msgs}"
+
+
+def test_validate_design_without_analysis_warns(tmp_path: Path) -> None:
+    """Bug B / Q3: design.yaml present without analysis.yaml must warn and
+    skip cross-reference. Schema checks still run."""
+    # Create a feature with ONLY design.yaml (no analysis/analysis.yaml).
+    feature = tmp_path / "feat"
+    feature.mkdir()
+    add_design(feature, FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    # Pass analysis=None to simulate the case.
+    validate_design(feature, None, report)
+    assert any(
+        "design.yaml present but analysis.yaml missing" in m
+        for m in warning_messages(report)
+    ), warning_messages(report)
+    # And no "tool_coverage" errors since cross-reference was skipped
+    assert not any(
+        "no tool_coverage entry" in m or "dim '" in m
+        for m in error_messages(report)
+    )
+
+
 def test_validate_analysis_input_schema_wrong_type_reports_error(tmp_path: Path) -> None:
     """Bug 2 extension: tools[].surface.input_schema must be a mapping."""
     feature = make_feature(tmp_path, analysis_yaml="""
