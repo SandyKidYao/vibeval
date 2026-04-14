@@ -573,6 +573,78 @@ def test_design_sequence_listed_unknown_item_errors(tmp_path: Path) -> None:
     )
 
 
+def test_design_sequence_pattern_match_passes(tmp_path: Path) -> None:
+    # An item under sequence with a correct tool_sequence spec referencing
+    # search_documents by surface name must pass check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    # Add a sequence item to the inline dataset
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_good",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_sequence",
+                "args": {"expected": ["search_documents", "other_tool"]},
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_good"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_sequence_pattern_mismatch_errors(tmp_path: Path) -> None:
+    # An item under sequence with the wrong rule name must fail check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_bad",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_called",  # wrong rule for sequence dim
+                "args": {"tool_name": "search_documents"},
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_bad"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'seq_bad' has no judge_spec matching the Allowed Pattern for 'sequence'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_sequence_pattern_expected_missing_tool_errors(tmp_path: Path) -> None:
+    # tool_sequence with args.expected not containing the tool surface_name
+    # must fail check (b).
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["datasets"][0]["items"].append({
+        "id": "seq_missing",
+        "data": {},
+        "_judge_specs": [
+            {
+                "method": "rule",
+                "rule": "tool_sequence",
+                "args": {"expected": ["some_other_tool"]},  # doesn't contain search_documents
+            }
+        ],
+    })
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["seq_missing"]
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=yaml.safe_dump(design_dict))
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "item 'seq_missing' has no judge_spec matching the Allowed Pattern for 'sequence'" in m
+        for m in error_messages(report)
+    )
+
+
 def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) -> None:
     # design-inline defines 'pos_item'; filesystem dataset also defines 'pos_item'.
     # The design-inline copy wins per Q12, but a collision warning must fire.
