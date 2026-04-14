@@ -357,7 +357,8 @@ def _run_rule_7(
                     )
                     continue
                 # Check (b) — spec pattern match — added in Task 5
-                # Check (c) — output_handling multi-item — added in Task 6 (post-loop)
+
+        # Check (c) — output_handling multi-item constraint — added in Task 6
 
         # Conditional: sequence dimension — Q8, never required by the CLI.
         # Only structurally checked when listed.
