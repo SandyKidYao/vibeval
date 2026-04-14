@@ -498,6 +498,79 @@ def test_design_judge_spec_model_extraction() -> None:
     assert m4.target_output is False
 
 
+# --- Rule 7 check (a) — item existence --------------------------------------
+
+def test_design_missing_tool_coverage_entry_for_tool_errors(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "no tool_coverage entry for tool 'search_documents'" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_mandatory_dim_empty_list_errors(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: []
+              negative_selection: []
+              disambiguation: []
+              argument_fidelity: []
+              output_handling: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    for dim in ("positive_selection", "negative_selection",
+                "disambiguation", "argument_fidelity", "output_handling"):
+        assert any(f"dimension '{dim}' has no items listed" in m for m in msgs), \
+            f"missing error for {dim} in {msgs}"
+
+
+def test_design_unknown_item_id_errors_check_a(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: ["ghost1", "ghost2"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any("item 'ghost' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost1' not found in any dataset" in m for m in msgs)
+    assert any("item 'ghost2' not found in any dataset" in m for m in msgs)
+
+
+def test_design_sequence_listed_unknown_item_errors(tmp_path: Path) -> None:
+    # sequence is never required (Q8), but when listed, check (a) still runs.
+    # Start from FULL_COVERAGE_DESIGN and add a ghost sequence reference.
+    design_dict = yaml.safe_load(textwrap.dedent(FULL_COVERAGE_DESIGN))
+    design_dict["tool_coverage"][0]["dimensions_covered"]["sequence"] = ["ghost_seq"]
+    new_design = yaml.safe_dump(design_dict)
+
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=new_design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any(
+        "sequence" in m and "ghost_seq" in m and "not found" in m
+        for m in msgs
+    )
+
+
 def test_design_filesystem_item_shadowed_by_design_inline_warns(tmp_path: Path) -> None:
     # design-inline defines 'pos_item'; filesystem dataset also defines 'pos_item'.
     # The design-inline copy wins per Q12, but a collision warning must fire.

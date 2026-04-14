@@ -323,11 +323,52 @@ def _run_rule_7(
     design: DesignModel,
     report: ValidationReport,
 ) -> None:
-    """Mechanical check ported from 07-agent-tools.md §Mechanical Check.
+    """Mechanical check ported from 07-agent-tools.md §Mechanical Check."""
+    coverage_by_id = {c.tool_id: c for c in design.tool_coverage}
 
-    Filled in incrementally across Tasks 4, 5, 6.
-    """
-    # Task 4 adds check (a) — item existence
-    # Task 5 adds check (b) — spec pattern match
-    # Task 6 adds check (c) — output_handling multi-item constraint
-    pass
+    for tool in analysis.tools:
+        coverage = coverage_by_id.get(tool.id)
+        if coverage is None:
+            report.error(
+                design.raw_path,
+                f"no tool_coverage entry for tool '{tool.id}'",
+            )
+            continue
+
+        mandatory = list(MANDATORY_DIMENSIONS)
+        if tool.type == "subagent":
+            mandatory.append("subagent_delegation")
+
+        for dim in mandatory:
+            item_ids = coverage.dimensions_covered.get(dim, [])
+            if not item_ids:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dimension '{dim}' has no items listed",
+                )
+                continue
+            for item_id in item_ids:
+                item = design.items_by_id.get(item_id)
+                if item is None:
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' dim '{dim}' item '{item_id}' "
+                        f"not found in any dataset",
+                    )
+                    continue
+                # Check (b) — spec pattern match — added in Task 5
+                # Check (c) — output_handling multi-item — added in Task 6 (post-loop)
+
+        # Conditional: sequence dimension — Q8, never required by the CLI.
+        # Only structurally checked when listed.
+        seq_ids = coverage.dimensions_covered.get("sequence", [])
+        for item_id in seq_ids:
+            item = design.items_by_id.get(item_id)
+            if item is None:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' dim 'sequence' item '{item_id}' "
+                    f"not found in any dataset",
+                )
+                continue
+            # Check (b) for sequence — added in Task 5
