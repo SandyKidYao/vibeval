@@ -89,14 +89,24 @@ def main() -> None:
                     "If using a custom LLM command, verify that it is configured and executable.")
 
     p_validate = sub.add_parser("validate",
-        help="Validate datasets and results against the vibeval protocol",
-        description="Check all datasets, judge specs, data items, traces, and results for a feature "
-                    "against the vibeval protocol format. Catches structural issues that would cause "
-                    "judge/compare/summary to fail at runtime.\n\n"
-                    "Validates: manifest structure, judge_spec fields (rule names, args, scoring, "
-                    "anchors, calibrations), data item reserved fields (_id, _tags, _judge_specs, "
-                    "_mock_context), trace format (turns, steps), result files, and cross-references "
-                    "(values_from/expected_from pointing to existing item fields).\n\n"
+        help="Validate analysis, design, datasets, and results against the vibeval protocol",
+        description="Check all artifacts for a feature against the vibeval protocol format. "
+                    "Catches structural issues that would cause judge/compare/summary to fail "
+                    "at runtime and enforces the strengthened tool_coverage invariant from "
+                    "plugin/protocol/references/07-agent-tools.md.\n\n"
+                    "Validates:\n"
+                    "  * analysis.yaml — project.execution_mode and tools[] schema (Agent features)\n"
+                    "  * design.yaml — tool_coverage[] cross-reference + Rule 7 mechanical check:\n"
+                    "    item existence, Allowed Spec Patterns per dimension, and the\n"
+                    "    output_handling multi-item constraint on mock_context_summary\n"
+                    "  * datasets — manifest structure, judge_spec fields (rule names, args, "
+                    "scoring, anchors, calibrations), data item reserved fields "
+                    "(_id, _tags, _judge_specs, _mock_context)\n"
+                    "  * results — trace format (turns, steps), result files, and cross-references "
+                    "(values_from/expected_from pointing to existing item fields)\n\n"
+                    "Analysis and design checks are skipped silently when the respective files are "
+                    "absent; the CLI is tolerant of mid-workflow states where the feature has only "
+                    "been analyzed but not designed yet.\n\n"
                     "Exit code 0 if no errors, 1 if errors found.")
     p_validate.add_argument("feature", help="Feature name to validate")
 
