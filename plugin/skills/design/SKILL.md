@@ -40,6 +40,7 @@ After producing the initial design, dispatch the `vibeval-consultant` agent to p
 
 Dispatch context:
 - Feature name and contract path
+- `tests/vibeval/{feature}/analysis/analysis.yaml` — **required**. The Consultant's Agent Tool Failure Modes section depends on `project.execution_mode`, `tools[]`, and each tool's `design_risks[]` being directly in its context. Do not expect the Consultant to re-scan the source code.
 - Current `design.yaml` (draft)
 - Target output path: `tests/vibeval/{feature}/_design_research.md`
 
@@ -75,10 +76,11 @@ Operational procedure:
 3. **Plan items for applicable conditional dimensions.** Include `sequence` only when the tool has a documented ordering dependency with another tool. Include `subagent_delegation` only when `type: subagent`.
 4. **Address high-severity design risks.** For every `design_risks` entry with `severity: high`, plan at least one item that directly exercises that risk and record it in `design_risks_addressed`. Medium and low risks are optional targets.
 5. **Assign items to datasets.** Decide which dataset(s) will host the planned items — the item bodies themselves are produced in Step 2 (Design Datasets), and their judge specs in Step 3 (Design Judge Specs). This step produces the plan and the `tool_coverage[]` cross-reference block.
+6. **Prove the coverage mechanically.** Every item id you list under `dimensions_covered.<dimension>` must, by the end of Step 3, correspond to a dataset item whose effective `judge_specs` carry at least one spec matching that dimension's Allowed Spec Pattern from `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` (section "Allowed Spec Patterns Per Dimension"). Do not register an item id under a dimension unless you have authored (or are authoring in Step 2 or Step 3) the matching `judge_spec`. The Evaluator cross-checks this after the design phase using structural field comparison on `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, `args.field` (presence), and `trap_design` (presence/non-empty) — placeholder ids or non-matching specs will block the handoff.
 
-Skip this step entirely when `analysis.yaml` has no `tools[]` section.
+Skip this step entirely when `analysis.yaml` has no `tools[]` section (i.e., `project.execution_mode == "non_agent"`).
 
-The design is not complete until every tool in `analysis.yaml:tools[]` has a matching `tool_coverage[]` entry with every mandatory dimension cell non-empty. The Evaluator agent re-verifies this invariant.
+The design is not complete until every tool in `analysis.yaml:tools[]` has a matching `tool_coverage[]` entry satisfying the strengthened invariant defined in `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` (section "Allowed Spec Patterns Per Dimension") — every referenced item id must resolve to a real dataset item, and every resolved item must carry at least one `judge_spec` matching the dimension's Allowed Spec Patterns Per Dimension. Non-empty keys alone are not enough; placeholder ids fail. The Evaluator agent re-verifies the invariant mechanically.
 
 ### 2. Design Datasets
 
