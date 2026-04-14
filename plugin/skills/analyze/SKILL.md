@@ -54,6 +54,7 @@ For each tool, record all fields from the Tool Inventory Entry Structure in `${C
 Operational guidance for the extraction itself:
 
 - **Capture `surface` verbatim.** `surface.name` and `surface.description` MUST match what the LLM actually sees at runtime, not how the tool is documented in comments, docstrings, or external docs. Read the registration site directly.
+- **Record `mock_target`** for every tool. This is the dotted import path or identifier that the test mock framework will use to wrap the tool's underlying implementation. For `custom_tool`: derive from the registration site (e.g., registration at `app/tools/search.py:42` of a function `search_documents` → `mock_target: "app.tools.search_documents"`). For `mcp_tool`: use the MCP client call path that the agent framework will intercept. For `subagent`: use the sub-agent invocation handle (e.g., the function or method used to dispatch the sub-agent). The `mock_target` is the stable join key between `tools[]` and each data item's `mock_context_summary[...]` at design phase and `_mock_context[...]` at synthesize phase — it MUST be exactly the string that will appear as the key in both places.
 - **For `mcp_tool` entries**, read the MCP server manifest or the connection config to discover the exposed surface — the registration is not in the project's source code.
 - **For `subagent` entries**, the `source_location` is the sub-agent's definition file (not the registration site of the tool-like handle). Also capture `subagent_prompt_summary` and `subagent_expected_context`.
 - **Leave `design_risks[]` and `siblings_to_watch[]` empty at this step.** They are populated in Step 3.
@@ -177,6 +178,7 @@ tools:
   - id: "<stable snake_case id>"
     type: "custom_tool | mcp_tool | subagent"
     source_location: "<file:line or MCP server/tool or subagent definition>"
+    mock_target: "<dotted import path used to mock this tool's implementation>"
     surface:
       name: "<LLM-facing name>"
       description: "<LLM-facing description>"

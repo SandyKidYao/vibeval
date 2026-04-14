@@ -45,6 +45,7 @@ tools:
   - id: "<stable snake_case identifier>"
     type: "custom_tool | mcp_tool | subagent"
     source_location: "<file:line, config path, or MCP server name>"
+    mock_target: "<dotted import path or identifier used to mock this tool's underlying implementation>"
 
     # The surface the LLM actually sees when choosing this tool.
     # Captured verbatim from the registration site where possible;
@@ -85,6 +86,7 @@ tools:
 | `id` | string | Yes | Stable identifier, snake_case. Used as the key in `design.yaml:tool_coverage[]`. |
 | `type` | enum | Yes | `custom_tool`, `mcp_tool`, or `subagent`. |
 | `source_location` | string | Yes | For `custom_tool`: `file:line` of the registration site. For `mcp_tool`: MCP server name and tool name. For `subagent`: the sub-agent's definition path. |
+| `mock_target` | string | Yes | The dotted import path or identifier used to mock this tool's underlying implementation. For `custom_tool`: the Python/TS module path of the registered function (e.g., `app.tools.search_documents`). For `mcp_tool`: the MCP client call path or wrapper function. For `subagent`: the invocation handle. This is the key under which the tool's responses appear in dataset items' `_mock_context[...]` and `mock_context_summary[...]`. It is distinct from `source_location` (which identifies where the tool is declared in source) and serves as the stable join key between `analysis.yaml:tools[]` and `design.yaml:datasets[].items[].mock_context_summary[...]`. |
 | `surface.name` | string | Yes | Verbatim name exposed to the LLM. |
 | `surface.description` | string | Yes | Verbatim description exposed to the LLM. |
 | `surface.input_schema` | object | Yes | Parameter layout as the LLM sees it. Mirror the real schema; a free-form summary is acceptable if the real schema is complex. |
@@ -156,7 +158,7 @@ The Per-Tool Coverage Matrix above names the typical `judge_spec` for each dimen
 | `negative_selection` | `method: rule`, `rule: tool_not_called`, `args.tool_name == <tool.surface.name>` |
 | `disambiguation` | `method: llm`, `target: {step_type: "tool_call"}`, `trap_design` is a non-empty string |
 | `argument_fidelity` | EITHER `method: llm`, `target: {step_type: "tool_call"}`; OR `method: rule`, `rule: equals` (or `matches`) with `args.field` present (the evaluator checks `args.field` existence only; verifying that it actually points at a real step-args path is the design skill's responsibility, not the mechanical check's) |
-| `output_handling` | The item's `_mock_context` contains an entry keyed by the tool's mock target, AND the item has `method: llm`, `target: "output"` (or `target` omitted). The multi-item constraint below also applies across the full `output_handling` list. |
+| `output_handling` | The item's `mock_context_summary` contains an entry keyed by `<tool.mock_target>` (the tool's declared mock target from `analysis.yaml:tools[i].mock_target`), AND the item has `method: llm`, `target: "output"` (or `target` omitted). The multi-item constraint below also applies across the full `output_handling` list. (Note: at design phase only `mock_context_summary` exists; the full `_mock_context` is produced in the synthesize phase and is not inspected here.) |
 | `sequence` | `method: rule`, `rule: tool_sequence`, `args.expected` contains `<tool.surface.name>` |
 | `subagent_delegation` | Applies only to tools with `type: subagent`. `method: llm`, `target: {step_type: "tool_call"}` |
 
@@ -168,9 +170,9 @@ For every `(tool_id, dimension, item_id)` triple in `design.yaml:tool_coverage[]
 
 2. **Spec pattern match.** The resolved item's effective `judge_specs` — item-level `_judge_specs` overriding manifest-level `judge_specs` per `02-dataset.md` priority rules — MUST contain at least one spec matching one of the allowed patterns for the dimension. The match is structural: the evaluator compares `method`, `rule`, `args.tool_name`, `args.expected`, `target.step_type`, the presence of `args.field` (value not validated), and the presence/non-emptiness of `trap_design` — nothing else. No interpretation of prose fields. Comparisons to the tool's `surface.name` are exact string equality.
 
-3. **`output_handling` multi-item constraint.** In addition to (1) and (2), the full `dimensions_covered.output_handling` list MUST span at least 2 items whose `_mock_context` payloads for this tool's mock target are **not byte-equal** — i.e., the serialized YAML/JSON of each item's `_mock_context[<mock_target>]` entry must differ as strings. The comparison is byte-level on purpose: it is mechanical and reproducible, and it catches the "same payload copy-pasted across items" failure mode without asking the evaluator to judge whether two payloads are "semantically different enough". A single success-case item does not satisfy the dimension, even if it matches the allowed pattern. This reflects that the dimension tests varied environment behavior (success / empty / error / malformed), not a single response.
+3. **`output_handling` multi-item constraint.** In addition to (1) and (2), the full `dimensions_covered.output_handling` list MUST span at least 2 items whose `mock_context_summary[<tool.mock_target>]` string values are **not byte-equal**. The comparison is byte-level on the summary strings themselves: it is mechanical and reproducible, and it catches the "same summary copy-pasted across items" failure mode without asking the evaluator to judge whether two scenarios are "semantically different enough". A single success-case item does not satisfy the dimension, even if it matches the allowed pattern. This reflects that the dimension tests varied environment behavior (success / empty / error / malformed), not a single response. Full `_mock_context` payloads (generated in the synthesize phase) are NOT inspected here — byte-level payload verification is deferred to a future synthesize-phase check.
 
-For the `output_handling` dimension, check (2) additionally verifies that the resolved data item has a `_mock_context` entry whose key matches the tool's mock target (as recorded in `analysis.yaml:tools[i].source_location` or the downstream mock wiring). This is the only data-item field the mechanical check inspects; all other dimensions look at `judge_spec` fields exclusively.
+For the `output_handling` dimension, check (2) additionally verifies that the resolved data item has a `mock_context_summary` entry whose key matches `analysis.yaml:tools[i].mock_target`. This is the only data-item field the mechanical check inspects; all other dimensions look at `judge_spec` fields exclusively. The check operates on `mock_context_summary` because that is the design-phase artifact — the full `_mock_context` payload is generated later in the synthesize phase and is out of scope for Design Phase Review.
 
 ### Principle
 
