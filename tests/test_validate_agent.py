@@ -1102,3 +1102,133 @@ def test_design_subagent_delegation_not_required_for_custom_tool(tmp_path: Path)
     assert not any(
         "subagent_delegation" in m for m in error_messages(report)
     )
+
+
+# --- Rule 7 check (c) — output_handling multi-item constraint --------------
+
+def test_design_output_handling_single_item_errors_check_c(tmp_path: Path) -> None:
+    # Build a design with only ONE item under output_handling — all other
+    # dimensions have valid items. Check (c) must fire.
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets:
+          - name: "ds"
+            items:
+              - id: "pos"
+                data: {}
+                _judge_specs:
+                  - method: rule
+                    rule: tool_called
+                    args: {tool_name: "search_documents"}
+              - id: "neg"
+                data: {}
+                _judge_specs:
+                  - method: rule
+                    rule: tool_not_called
+                    args: {tool_name: "search_documents"}
+              - id: "dis"
+                data: {}
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: {step_type: "tool_call"}
+                    criteria: "x"
+                    trap_design: "t"
+              - id: "arg"
+                data: {}
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: {step_type: "tool_call"}
+                    criteria: "x"
+              - id: "oh_only"
+                data: {}
+                mock_context_summary:
+                  "app.tools.search_documents": "returns empty"
+                _judge_specs:
+                  - method: llm
+                    scoring: binary
+                    target: "output"
+                    criteria: "x"
+
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["pos"]
+              negative_selection: ["neg"]
+              disambiguation: ["dis"]
+              argument_fidelity: ["arg"]
+              output_handling: ["oh_only"]
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "output_handling must span >=2 items, found 1" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_byte_equal_summaries_errors(tmp_path: Path) -> None:
+    # Both oh_empty and oh_error now carry identical summary strings.
+    design = FULL_COVERAGE_DESIGN.replace(
+        "returns HTTP 429 error",
+        "returns empty result list",
+    )
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert any(
+        "mock_context_summary" in m and "byte-equal" in m
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_all_empty_summaries_errors(tmp_path: Path) -> None:
+    # Both oh_empty and oh_error have empty-string summaries; Q10 excludes
+    # empties from the distinct-count, so the check fires.
+    design = FULL_COVERAGE_DESIGN.replace(
+        '"returns empty result list"', '""'
+    ).replace(
+        '"returns HTTP 429 error"', '""'
+    )
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=design)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    # The empty strings will also fail check (b) output_handling (because
+    # _coerce_mock_context_summary keeps empty strings, but the check (b)
+    # guard "tool.mock_target in item.mock_context_summary" still passes —
+    # the key exists with value "").
+    # So check (c) should fire with the distinctness error.
+    assert any(
+        ("byte-equal" in m or "all empty" in m)
+        for m in error_messages(report)
+    )
+
+
+def test_design_output_handling_two_items_distinct_summaries_passes(tmp_path: Path) -> None:
+    feature, analysis = make_agent_feature(tmp_path, design_yaml=FULL_COVERAGE_DESIGN)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    assert error_messages(report) == []
+
+
+def test_design_output_handling_empty_list_only_check_a_fires(tmp_path: Path) -> None:
+    # If output_handling list is absent/empty, check (a) fires "no items listed".
+    # Check (c) must NOT additionally fire with "must span >=2 items, found 0".
+    feature, analysis = make_agent_feature(tmp_path, design_yaml="""
+        datasets: []
+        tool_coverage:
+          - tool_id: "search_documents"
+            dimensions_covered:
+              positive_selection: ["ghost"]
+              negative_selection: ["ghost"]
+              disambiguation: ["ghost"]
+              argument_fidelity: ["ghost"]
+              output_handling: []
+    """)
+    report = ValidationReport()
+    validate_design(feature, analysis, report)
+    msgs = error_messages(report)
+    assert any("dimension 'output_handling' has no items listed" in m for m in msgs)
+    assert not any(
+        "output_handling must span >=2" in m for m in msgs
+    ), "check (c) should not duplicate check (a)'s 'no items listed' error"

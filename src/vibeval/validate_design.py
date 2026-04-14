@@ -419,7 +419,29 @@ def _run_rule_7(
                         f"has no judge_spec matching the Allowed Pattern for '{dim}'",
                     )
 
-        # Check (c) — output_handling multi-item constraint — added in Task 6
+        # Check (c) — output_handling multi-item constraint
+        oh_ids = coverage.dimensions_covered.get("output_handling", [])
+        if oh_ids:
+            oh_items = [design.items_by_id[i] for i in oh_ids if i in design.items_by_id]
+            if len(oh_items) < 2:
+                report.error(
+                    coverage.raw_path,
+                    f"tool '{tool.id}' output_handling must span >=2 items, "
+                    f"found {len(oh_items)}",
+                )
+            else:
+                summaries = [
+                    item.mock_context_summary.get(tool.mock_target, "")
+                    for item in oh_items
+                ]
+                distinct_nonempty = {s for s in summaries if s}
+                if len(distinct_nonempty) < 2:
+                    report.error(
+                        coverage.raw_path,
+                        f"tool '{tool.id}' output_handling: "
+                        f"mock_context_summary['{tool.mock_target}'] values "
+                        f"are all empty or byte-equal; need >=2 distinct",
+                    )
 
         # Conditional: sequence dimension — Q8, never required by the CLI.
         # Only structurally checked when listed.
