@@ -98,7 +98,9 @@ If you don't yet know the rigor level (it is inferred at Phase D, after the dial
    - If the user emphasized specific dimensions (e.g., "I really care about language handling"), set the corresponding `user_emphasis` field.
    - Otherwise, use defaults from the protocol reference.
 
-4. **Infer `rigor`** (if the user has not explicitly set it). This is folded into the draft so the contract is saved exactly once, with `rigor` populated from the start.
+4. **Infer `output_language`** for downstream narrative output (analysis findings, design rationale, judge reasons, evaluator reports). Default to `English`. If the user wrote any of their dialogue answers in a non-English language, draft `output_language` to match that language and surface it explicitly when you show the draft so they can override. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md` for what `output_language` does and does not affect — in particular, it does NOT change the language of test data payloads that must match the AI under test.
+
+5. **Infer `rigor`** (if the user has not explicitly set it). This is folded into the draft so the contract is saved exactly once, with `rigor` populated from the start.
 
    a. **Check code footprint**: count LOC of files referenced by `analysis/analysis.yaml` if it exists, or estimate from the feature's source directory. Threshold: <200 LOC → lean toward `light`; ≥200 LOC → lean toward `standard`.
 
@@ -112,16 +114,16 @@ If you don't yet know the rigor level (it is inferred at Phase D, after the dial
 
    Write the inferred level into the in-memory draft's `rigor` field. Do not save yet.
 
-5. **Show the draft to the user** (including the inferred `rigor`):
+6. **Show the draft to the user** (including the inferred `output_language` and `rigor`):
 
-   > Here's the contract I've drafted based on our discussion, including a suggested rigor level of `<level>` (meaning: <one-line description of what that entails downstream>). Let me know if anything is wrong, missing, or should be emphasized differently — including whether you want to override the rigor.
+   > Here's the contract I've drafted based on our discussion, including a suggested output language of `<language>` and rigor level of `<level>` (meaning: <one-line description of what that entails downstream>). Let me know if anything is wrong, missing, or should be emphasized differently — including whether you want to override the output language or the rigor.
    >
    > [paste the full YAML]
 
-6. **If the user has edits**, apply them (including any `rigor` override), show the updated draft, and ask again. Loop until the user confirms.
+7. **If the user has edits**, apply them (including any `output_language` or `rigor` override), show the updated draft, and ask again. Loop until the user confirms.
 
-7. **When the user confirms, save and clean up in this order**:
-   - Save the complete draft to `tests/vibeval/{feature}/contract.yaml` **exactly once** — this single write includes requirements, known_gaps, quality_criteria, AND `rigor`. No intermediate state on disk.
+8. **When the user confirms, save and clean up in this order**:
+   - Save the complete draft to `tests/vibeval/{feature}/contract.yaml` **exactly once** — this single write includes requirements, known_gaps, quality_criteria, `output_language`, AND `rigor`. No intermediate state on disk.
    - Delete `tests/vibeval/{feature}/_research.md`.
 
 ## Checkpoint
@@ -130,7 +132,7 @@ After the contract is saved, present to the user:
 
 1. **Contract file path**: `tests/vibeval/{feature}/contract.yaml`
 2. **Requirement counts by source**: `code=N, inferred=N, brainstorm=N, user=N`
-3. **Rigor level** and a one-line description of what it affects
+3. **Output language** and **rigor level**, each with a one-line description of what they affect
 4. **Known gaps** identified
 5. **What happens next**: hand back to `/vibeval` which will proceed to the next phase (typically Analyze).
 
@@ -148,4 +150,4 @@ If `tests/vibeval/{feature}/contract.yaml` already exists:
    - Updated quality criteria or user emphasis update the relevant fields.
    - Bump `updated:` to today's date.
    - Append an entry to `feedback_log` recording this update round.
-5. Save. Skip rigor re-inference unless the user explicitly wants to revisit it.
+5. Save. Skip rigor and output_language re-inference unless the user explicitly wants to revisit them.

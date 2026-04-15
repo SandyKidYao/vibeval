@@ -67,6 +67,7 @@ You receive:
 3. **User's initial description** (if any — often just the feature name)
 4. **Existing contract** (if updating; usually absent for fresh negotiations)
 5. **Target output path** for your brief (typically `tests/vibeval/{feature}/_research.md`)
+6. **Output language** (optional, only when an existing contract is supplied). When dispatched by the design skill, the contract already exists and `contract.yaml:output_language` is authoritative; the dispatcher will pass it to you. Write the brief's narrative sections (likely failure modes, hidden contract, seed questions, notes) in that language. When dispatched by the contract skill for a fresh negotiation no contract exists yet — default to English. Quoted prompt excerpts and code references stay in their original language regardless.
 
 **For the Design variant**, the dispatch context also includes `tests/vibeval/{feature}/analysis/analysis.yaml`. Read its `project.execution_mode`, `tools[]` (each entry's `surface`, `responsibility`, and `design_risks[]`), and the existing `design.yaml:tool_coverage[]` (if present) before producing the Agent Tool Failure Modes section. Do not re-scan the source code for tool registrations — the analyze phase has already done that and the result is authoritative.
 

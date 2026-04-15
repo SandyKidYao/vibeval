@@ -47,6 +47,15 @@ feature: "<feature_name>"
 created: "<YYYY-MM-DD>"
 updated: "<YYYY-MM-DD>"
 
+# Output language: the natural language downstream phases (analyze, design,
+# synthesize, run, judge) should use for narrative output — descriptions,
+# explanations, findings, suggestions, judge reasons, evaluator reports.
+# Use the natural-language name (e.g., "English", "Chinese", "Japanese",
+# "Spanish"). Defaults to "English" if omitted. Code, identifiers, structured
+# field keys, and any payloads that must be in the language the AI under test
+# expects (e.g., user_message values for a Chinese chatbot) are NOT affected.
+output_language: "<English|Chinese|Japanese|...>"
+
 # Rigor level: controls workflow depth for downstream phases.
 # Inferred by the contract skill during negotiation; user may override.
 #   light    — small features / no external docs; compressed loops, only high-severity issues reported
@@ -143,6 +152,20 @@ A chronological record of user feedback across iterations. Each entry captures:
 The feedback log serves two purposes:
 1. **Accountability**: the Evaluator can check that past feedback has been addressed
 2. **Learning**: patterns in feedback reveal systematic issues in the workflow
+
+### output_language
+
+The natural language used for narrative output produced by downstream phases — descriptions, explanations, findings, suggestions, judge reasons, evaluator reports, and the contract's own free-text fields (`description`, `gap`, `bar`, `user_emphasis`, `feedback`, `action`).
+
+The value is a natural-language name (`English`, `Chinese`, `Japanese`, `Spanish`, etc.). Defaults to `English` when the field is missing. The contract skill asks the user to confirm or override during negotiation.
+
+**What `output_language` does NOT affect:**
+
+- Code, file paths, identifiers, YAML/JSON keys, rule names, or any structured field key
+- Test data payloads that must match the language the AI under test expects — e.g., `user_message` values for a Chinese chatbot must remain in Chinese regardless of `output_language`
+- Quoted excerpts from prompts or code (preserve the original)
+
+The intent is to make analysis output, design rationale, synthesized item descriptions, judge reasoning, and evaluator findings readable to non-English-speaking developers, while keeping everything that is language-locked by the system under test untouched.
 
 ### rigor
 

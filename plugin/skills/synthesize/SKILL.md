@@ -14,6 +14,10 @@ description: Synthesize vibeval test datasets by dispatching parallel Data Synth
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/00-philosophy.md` — Information asymmetry governs how data and mock context should be crafted.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/02-dataset.md` — Dataset and data item format, including `_mock_context`.
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). When dispatching the `vibeval-data-synthesizer` agents, pass `output_language` in the dispatch context so each agent uses it for narrative fields — item `description`, `_mock_context.<target>.description`, dataset `description`, and the Checkpoint summary you present to the user. The actual user-facing input payloads (e.g., `user_message`, `query`, persona messages) and the mock response payloads themselves stay in whatever language the AI under test expects: a Chinese chatbot still receives Chinese inputs and Chinese mock context regardless of `output_language`. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md` for the full scope.
+
 ## Steps
 
 ### 1. Plan Dataset Tasks

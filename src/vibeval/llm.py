@@ -10,13 +10,21 @@ from typing import Any
 from .config import LLMConfig
 
 
-def evaluate_llm(spec: dict[str, Any], result: dict[str, Any], dataset_item: dict[str, Any] | None, llm_config: LLMConfig) -> dict[str, Any]:
+def evaluate_llm(
+    spec: dict[str, Any],
+    result: dict[str, Any],
+    dataset_item: dict[str, Any] | None,
+    llm_config: LLMConfig,
+    output_language: str = "English",
+) -> dict[str, Any]:
     """Evaluate an LLM JudgeSpec against a TestResult.
 
-    Returns a JudgeResult dict.
+    Returns a JudgeResult dict. `output_language` controls the natural
+    language used for the judge's `reason` field — see contract.yaml's
+    `output_language` field (plugin/protocol/references/06-contract.md).
     """
     scoring = spec.get("scoring", "binary")
-    prompt = _build_prompt(spec, result, dataset_item)
+    prompt = _build_prompt(spec, result, dataset_item, output_language)
 
     try:
         response = _call_llm(prompt, llm_config)
@@ -37,12 +45,24 @@ def evaluate_llm(spec: dict[str, Any], result: dict[str, Any], dataset_item: dic
     }
 
 
-def _build_prompt(spec: dict[str, Any], result: dict[str, Any], dataset_item: dict[str, Any] | None) -> str:
+def _build_prompt(
+    spec: dict[str, Any],
+    result: dict[str, Any],
+    dataset_item: dict[str, Any] | None,
+    output_language: str = "English",
+) -> str:
     """Build the evaluation prompt from spec + result data (always full context)."""
     scoring = spec.get("scoring", "binary")
     criteria = spec.get("criteria", "")
 
     parts = ["You are an AI output evaluator. Evaluate the following test result.\n"]
+    if output_language and output_language.strip().lower() != "english":
+        parts.append(
+            f"All natural-language explanations you produce, including the JSON "
+            f"`reason` field, MUST be written in {output_language}. Numeric scores, "
+            f"JSON keys, and any quoted excerpts from the inputs/outputs/trace "
+            f"stay in their original form.\n"
+        )
 
     # Test design context (insider knowledge — the tested AI never sees this)
     test_intent = spec.get("test_intent", "")
@@ -127,6 +147,8 @@ def _build_prompt(spec: dict[str, Any], result: dict[str, Any], dataset_item: di
 
     # Response format
     parts.append('## Response Format\nRespond in JSON: {"score": <number>, "reason": "<brief explanation>"}\nNothing else.')
+    if output_language and output_language.strip().lower() != "english":
+        parts.append(f'Reminder: write the `reason` value in {output_language}.')
 
     return "\n".join(parts)
 

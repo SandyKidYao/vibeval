@@ -404,6 +404,72 @@ pre.json {
   color: var(--text-secondary);
 }
 
+/* JSON tree renderer */
+.json-tree {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-height: 480px;
+  overflow: auto;
+  word-break: break-word;
+}
+.json-tree .jt-coll { display: block; }
+.json-tree .jt-header {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+.json-tree .jt-header:hover { color: var(--accent); }
+.json-tree .jt-toggle {
+  display: inline-block;
+  width: 10px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+.json-tree .jt-summary { color: var(--text-dim); font-style: italic; }
+.json-tree .jt-body {
+  border-left: 1px dashed var(--border);
+  margin-left: 4px;
+  padding-left: 12px;
+}
+.json-tree .jt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+.json-tree .jt-row-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.json-tree .jt-key {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.json-tree .jt-str { color: var(--green); }
+.json-tree .jt-multiline {
+  white-space: pre-wrap;
+  background: rgba(255,255,255,.02);
+  border-left: 2px solid var(--green-dim);
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin: 2px 0;
+  color: var(--green);
+}
+.json-tree .jt-num { color: var(--cyan); }
+.json-tree .jt-bool { color: var(--purple); }
+.json-tree .jt-null { color: var(--text-dim); font-style: italic; }
+.json-tree .jt-empty { color: var(--text-dim); }
+
 /* ================================================================
    Timeline — simple left-accent approach
    ================================================================ */
@@ -834,6 +900,8 @@ section > h2 { font-size: 24px; font-weight: 700; margin-bottom: 20px; }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.2); }
 [data-theme="light"] .feature-card:hover { box-shadow: 0 8px 30px rgba(0,0,0,.08); }
 [data-theme="light"] pre.json { background: #f0f0f2; border-color: rgba(0,0,0,.06); color: #555568; }
+[data-theme="light"] .json-tree { background: #f0f0f2; border-color: rgba(0,0,0,.06); color: #555568; }
+[data-theme="light"] .json-tree .jt-multiline { background: rgba(0,0,0,.03); }
 [data-theme="light"] .turn { background: #f8f8fa; }
 [data-theme="light"] .bar-container { background: rgba(0,0,0,.04); }
 [data-theme="light"] .dist-bar { background: rgba(0,0,0,.04); }

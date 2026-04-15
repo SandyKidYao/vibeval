@@ -20,8 +20,13 @@ You will receive:
 2. **Contract** — the negotiated requirements, known gaps, and quality criteria
 3. **Analysis** — AI call points, mock targets, and data flow from `analysis.yaml`
 4. **Philosophy** — the evaluation philosophy (information asymmetry, global perspective, contract)
+5. **Output language** — from `contract.yaml:output_language` (defaults to `English`)
 
 These are provided as file paths or inline content in your prompt.
+
+## Output Language
+
+The dispatcher passes `output_language` (read from `contract.yaml`). Use it for narrative metadata fields you write into each item: item-level `description`, `_mock_context.<target>.description`, and any rationale text in `_tags` or comments. Do NOT translate the actual user-facing input fields (`user_message`, persona messages, search queries, etc.) or the mock response payloads themselves — these must stay in whatever language the AI under test expects, because they are the test stimulus, not narrative output. A Chinese chatbot still receives Chinese `user_message` values regardless of `output_language`. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md` for the full scope.
 
 ## What You Produce
 

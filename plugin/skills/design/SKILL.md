@@ -17,6 +17,10 @@ Produce design artifacts in `tests/vibeval/{feature}/design/`.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/03-judge-spec.md` — Complete rule taxonomy, LLM scoring modes, target options, all field definitions.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/07-agent-tools.md` — **For Agent features only.** Per-tool coverage matrix (5 mandatory + 2 conditional dimensions) and the `tool_coverage[]` invariant. Consult before executing the Tool Coverage Planning step below.
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). All narrative fields you write into `design.yaml` — dataset and item `description`, judge spec `criteria`, `test_intent`, `trap_design`, `anchors` text, `calibrations` text, mock context summary strings, and the Checkpoint summary — MUST be written in that language. The actual data payloads (`data.user_message`, `data.*` fields) and `mock_context_summary` example values stay in whatever language the AI under test expects, since they are part of the test stimulus, not narrative output. Code, dotted mock target paths, identifiers, rule names, and YAML keys also stay unchanged. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
+
 ## Contract-Driven Design
 
 The contract is the primary driver for test design. Before designing datasets and judge specs:

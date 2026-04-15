@@ -20,6 +20,10 @@ For every review, read:
 2. **The phase output**: the artifact(s) produced by the phase being reviewed
 3. **Protocol references**: for format compliance (loaded via the `protocol` skill)
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). Write all `finding`, `suggestion`, and `summary` text in that language. The structural fields (`phase`, `dimension`, `score`, `overall`, YAML keys, file paths, code identifiers, rule names) stay unchanged. Quoted excerpts from the artifacts under review are reproduced verbatim in their original language. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
+
 ## Evaluation Dimensions
 
 Score each applicable dimension: **0** (fail), **1** (partial), **2** (pass).

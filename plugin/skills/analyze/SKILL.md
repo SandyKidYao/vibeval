@@ -17,6 +17,10 @@ Perform a thorough analysis of the codebase to prepare for test generation.
 
 Produce analysis artifacts in `tests/vibeval/{feature}/analysis/`.
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). All narrative fields you write into `analysis.yaml` — `description`, `purpose`, `input_description`, `output_description`, `issue`, `suggestion`, `responsibility`, `design_risks[].finding`, `design_risks[].suggestion` — and the Checkpoint summary you present to the user MUST be written in that language. Code, file paths, identifiers, mock targets, rule names, YAML/JSON keys, and quoted excerpts from prompts or source code stay in their original form. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md` for the full scope of `output_language`.
+
 ## Contract Alignment
 
 The contract contains requirements that may not be visible in the code. During analysis:

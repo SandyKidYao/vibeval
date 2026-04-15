@@ -14,6 +14,10 @@ Read `tests/vibeval/{feature}/design/` and generate test code artifacts.
 - `tests/vibeval/{feature}/design/design.yaml` — The test design specifying datasets, judge specs, mock targets, and test structure.
 - `${CLAUDE_PLUGIN_ROOT}/protocol/references/04-result.md` — Result and trace format (the test code must produce conforming files).
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). Generated test code itself — function names, variable names, file names, and inline comments — stays in English regardless, because it must remain editable by anyone on the team and because Python/TypeScript/Go convention is English. Only the Checkpoint summary you present to the user, and any human-readable explanation you produce while walking through the generated code, should be written in `output_language`. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
+
 ## Steps
 
 ### 1. Confirm LLM Provider

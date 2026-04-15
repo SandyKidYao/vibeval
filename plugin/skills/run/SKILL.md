@@ -10,6 +10,10 @@ Execute the full test-evaluate cycle for a feature: run tests, judge results, di
 **Before starting, read:**
 - `tests/vibeval/{feature}/contract.yaml` — The negotiated contract. Diagnosis should reference contract requirements when analyzing failures.
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). The diagnosis you present to the user — failure summaries, pattern analysis, actionable recommendations, and the Checkpoint — MUST be written in that language. The `vibeval judge` and `vibeval compare` CLIs already inject `output_language` into the LLM judge/compare prompts (since v0.7.1), so the `reason` fields inside result and comparison files should already be in the target language; quote them as-is. Command names, file paths, framework error messages, and code snippets stay unchanged. See `${CLAUDE_PLUGIN_ROOT}/protocol/references/06-contract.md`.
+
 ## Steps
 
 ### 1. Detect Test Framework

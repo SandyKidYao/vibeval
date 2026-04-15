@@ -23,6 +23,10 @@ If these do not exist, the `/vibeval` command should route to the full workflow 
 **Before starting, read:**
 - `tests/vibeval/{feature}/contract.yaml` — The negotiated contract. Updates must maintain coverage of all requirements.
 
+## Output Language
+
+Read `contract.yaml:output_language` (defaults to `English` if absent). Apply the same rule the originating phase uses: narrative output (descriptions, findings, suggestions, summaries) goes in `output_language`; code, identifiers, paths, and language-locked test payloads stay unchanged. When updating each artifact, follow that artifact's source skill (analyze / design / synthesize / code) for the precise scope.
+
 ## Steps
 
 ### 1. Detect Changes

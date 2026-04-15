@@ -39,6 +39,26 @@ class Config:
     def design_dir(self, feature: str) -> Path:
         return self.feature_dir(feature) / "design"
 
+    def output_language(self, feature: str) -> str:
+        """Read `output_language` from a feature's contract.yaml.
+
+        Returns "English" if the contract file is absent, unreadable,
+        or does not contain the field. The value is a natural-language
+        name such as "English", "Chinese", "Japanese" — see
+        plugin/protocol/references/06-contract.md.
+        """
+        contract_path = self.feature_dir(feature) / "contract.yaml"
+        if not contract_path.exists():
+            return "English"
+        try:
+            data = yaml.safe_load(contract_path.read_text(encoding="utf-8")) or {}
+        except (yaml.YAMLError, OSError):
+            return "English"
+        lang = data.get("output_language")
+        if not isinstance(lang, str) or not lang.strip():
+            return "English"
+        return lang.strip()
+
     def list_features(self) -> list[str]:
         """List all feature directories under vibeval_root."""
         root = Path(self.vibeval_root)

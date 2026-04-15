@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.1 (2026-04-15)
+
+### New Features
+
+- **`output_language` field in `contract.yaml`.** A new top-level field captures the natural language downstream phases should use for narrative output — descriptions, explanations, findings, suggestions, judge reasons, evaluator reports, and the contract's own free-text fields. The value is a natural-language name (`English`, `Chinese`, `Japanese`, `Spanish`, ...) and defaults to `English` when absent. Code, identifiers, JSON/YAML keys, and test data payloads that must match the language the AI under test expects (e.g., `user_message` values for a Chinese chatbot) are explicitly out of scope. The contract skill drafts the field during Phase D, infers it from the user's dialogue language, and surfaces it for confirmation alongside `rigor`.
+- **`vibeval judge` and `vibeval compare` honor `output_language` at runtime.** `judge_run` and `compare_runs` read `contract.yaml:output_language` once per feature via the new `Config.output_language(feature)` helper and thread it through `evaluate_llm` / `_build_prompt` and `_compare_pair` / `_build_comparison_prompt`. When the language is anything other than `English` (case-insensitive), a directive is injected at the top of the LLM prompt and a reminder after the response-format section, telling the LLM to write the JSON `reason` field in the target language while keeping numeric scores, JSON keys, the `winner` literal (`"a"|"b"|"tie"`), and quoted excerpts unchanged. Result and comparison files now contain `reason` text in the user's language without a presentation-time translation step.
+- **Plugin skill and agent guidance for `output_language`.** `analyze`, `design`, `synthesize`, `run`, `code`, and `update` skills each gained a short Output Language section pointing to `contract.yaml:output_language` and spelling out which fields the phase translates and which it leaves alone. The `vibeval-evaluator`, `vibeval-consultant`, and `vibeval-data-synthesizer` agents received the same guidance, with `data-synthesizer` explicitly stating that `user_message` and mock response payloads stay in the AI-under-test's language regardless.
+- **Web dashboard JSON tree renderer.** `vibeval serve`'s Trace, Inputs, Outputs, step Details, and any other JSON view now use a collapsible tree renderer instead of the previous `JSON.stringify` `<pre>` block. Objects and arrays show as click-to-collapse nodes with a count summary; multi-line strings get a dedicated multiline block that preserves newlines; primitives are color-coded (keys amber, strings green, numbers cyan, booleans purple, null dim). Strings whose content is itself JSON (a common shape inside `step.data` for tool calls) are auto-parsed and rendered as a tree, fixing the original "JSON shows on a single line with no breaks" complaint. Light theme is supported.
+
+### Implementation Notes
+
+- New module surface: `Config.output_language(feature)` in `src/vibeval/config.py` reads `contract.yaml` with safe fallbacks (missing file, malformed YAML, blank/non-string value all → `English`). `evaluate_llm`, `_build_prompt`, `judge_single`, `_evaluate_spec`, `_compare_pair`, and `_build_comparison_prompt` gained an `output_language: str = "English"` parameter; default is a no-op so existing prompts and tests are byte-identical when the contract is absent or English.
+- New tests: `tests/test_output_language.py` (22 cases) covers the contract reader's edge cases, prompt directive placement, `evaluate_llm` parameter passing, and end-to-end `judge_run` / `compare_runs` execution against a mocked LLM with `output_language: Chinese` / `Japanese`. `tests/test_serve_json_tree.py` + `tests/serve_static/test_json_tree.js` (12 scenarios) drive the browser-JS renderer through Node.js with a minimal DOM stub, asserting structural rendering, JSON-string auto-parsing, multi-line handling, primitives, nested structures, and click-handler attachment; the pytest wrapper skips gracefully when `node` is not installed and also asserts the required `.jt-*` CSS classes exist.
+- `simulate_user` is intentionally NOT affected: it generates the next user message that the AI under test will receive, which must remain in whatever language the system expects.
+- `vibeval validate` does not parse contract.yaml fields, so `output_language` is a plugin-layer concern; the CLI reads it only at judge/compare time.
+- 219 tests pass (195 prior + 24 new).
+
+### Breaking Changes
+
+None. Contracts without `output_language` continue to behave exactly as before — judge and compare prompts are byte-identical to 0.7.0 for the default case. Result files produced under 0.7.0 remain valid.
+
 ## 0.7.0 (2026-04-14)
 
 ### New Features

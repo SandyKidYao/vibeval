@@ -32,6 +32,7 @@ def compare_runs(
     datasets = load_all_datasets(str(config.datasets_dir(feature)))
     results_a = load_run(str(config.results_dir(feature) / run_a))
     results_b = load_run(str(config.results_dir(feature) / run_b))
+    output_language = config.output_language(feature)
 
     # Index by (test_name, item_id)
     index_a = {(r["test_name"], r.get("item_id", "")): r for r in results_a}
@@ -59,7 +60,7 @@ def compare_runs(
         llm_specs = [s for s in specs if s.get("method") == "llm"]
 
         for spec in llm_specs:
-            pair = _compare_pair(spec, ra, rb, config)
+            pair = _compare_pair(spec, ra, rb, config, output_language=output_language)
             pair["test_name"] = test_name
             pair["item_id"] = item_id
             pairs.append(pair)
@@ -95,12 +96,13 @@ def _compare_pair(
     result_a: dict[str, Any],
     result_b: dict[str, Any],
     config: Config,
+    output_language: str = "English",
 ) -> dict[str, Any]:
     """Compare a single pair on a single criteria, with position swap."""
     criteria = spec.get("criteria", "")
 
     # Round 1: A=run_a, B=run_b
-    prompt_ab = _build_comparison_prompt(spec, result_a, result_b)
+    prompt_ab = _build_comparison_prompt(spec, result_a, result_b, output_language)
     try:
         response_ab = _call_llm(prompt_ab, config.llm)
         verdict_ab = _parse_comparison(response_ab)
@@ -108,7 +110,7 @@ def _compare_pair(
         verdict_ab = {"winner": "error", "reason": str(e)}
 
     # Round 2: A=run_b, B=run_a (swapped)
-    prompt_ba = _build_comparison_prompt(spec, result_b, result_a)
+    prompt_ba = _build_comparison_prompt(spec, result_b, result_a, output_language)
     try:
         response_ba = _call_llm(prompt_ba, config.llm)
         verdict_ba = _parse_comparison(response_ba)
@@ -134,6 +136,7 @@ def _build_comparison_prompt(
     spec: dict[str, Any],
     result_a: dict[str, Any],
     result_b: dict[str, Any],
+    output_language: str = "English",
 ) -> str:
     """Build a pairwise comparison prompt with full insider knowledge."""
     criteria = spec.get("criteria", "")
@@ -142,6 +145,13 @@ def _build_comparison_prompt(
         "You are comparing two AI system outputs on the same task.",
         "Determine which output is better based on the given criteria.",
     ]
+    if output_language and output_language.strip().lower() != "english":
+        parts.append(
+            f"All natural-language explanations you produce, including the JSON "
+            f"`reason` field, MUST be written in {output_language}. The `winner` "
+            f"field stays as the literal string \"a\", \"b\", or \"tie\"; quoted "
+            f"excerpts from the outputs/trace stay in their original form."
+        )
 
     # Insider knowledge — test design context
     test_intent = spec.get("test_intent", "")
@@ -177,6 +187,8 @@ def _build_comparison_prompt(
         'Respond in JSON: {"winner": "a" or "b" or "tie", "reason": "brief explanation"}',
         "Nothing else.",
     ])
+    if output_language and output_language.strip().lower() != "english":
+        parts.append(f'Reminder: write the `reason` value in {output_language}.')
 
     return "\n".join(parts)
 

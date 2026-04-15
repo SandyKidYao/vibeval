@@ -30,9 +30,11 @@ def judge_run(feature: str, run_id: str, config: Config) -> list[dict[str, Any]]
     datasets = load_all_datasets(str(datasets_dir))
     results = load_run(str(run_dir))
 
+    output_language = config.output_language(feature)
+
     updated_results = []
     for result in results:
-        updated = judge_single(result, datasets, config)
+        updated = judge_single(result, datasets, config, output_language=output_language)
         updated_results.append(updated)
         save_result(updated, str(run_dir))
 
@@ -42,7 +44,12 @@ def judge_run(feature: str, run_id: str, config: Config) -> list[dict[str, Any]]
     return updated_results
 
 
-def judge_single(result: dict[str, Any], datasets: dict[str, Dataset], config: Config) -> dict[str, Any]:
+def judge_single(
+    result: dict[str, Any],
+    datasets: dict[str, Dataset],
+    config: Config,
+    output_language: str = "English",
+) -> dict[str, Any]:
     """Judge a single TestResult against its dataset's judge_specs."""
     dataset_name = result.get("dataset", "")
     item_id = result.get("item_id", "")
@@ -75,7 +82,7 @@ def judge_single(result: dict[str, Any], datasets: dict[str, Dataset], config: C
             })
             continue
 
-        jr = _evaluate_spec(spec, result, item, config)
+        jr = _evaluate_spec(spec, result, item, config, output_language)
         judge_results.append(jr)
 
         # Check gate
@@ -86,7 +93,13 @@ def judge_single(result: dict[str, Any], datasets: dict[str, Dataset], config: C
     return result
 
 
-def _evaluate_spec(spec: dict[str, Any], result: dict[str, Any], item: DataItem | None, config: Config) -> dict[str, Any]:
+def _evaluate_spec(
+    spec: dict[str, Any],
+    result: dict[str, Any],
+    item: DataItem | None,
+    config: Config,
+    output_language: str = "English",
+) -> dict[str, Any]:
     """Evaluate a single JudgeSpec."""
     method = spec.get("method", "")
     item_data = item.data if item else None
@@ -94,7 +107,7 @@ def _evaluate_spec(spec: dict[str, Any], result: dict[str, Any], item: DataItem 
     if method == "rule":
         return evaluate_rule(spec, result, item_data)
     elif method == "llm":
-        return evaluate_llm(spec, result, item_data, config.llm)
+        return evaluate_llm(spec, result, item_data, config.llm, output_language=output_language)
     else:
         return {
             "spec": spec,

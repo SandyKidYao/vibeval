@@ -28,9 +28,94 @@ function formatTime(ts) {
 }
 
 function jsonPre(obj) {
-  const pre = $('pre', {className: 'json'});
-  pre.textContent = JSON.stringify(obj, null, 2);
-  return pre;
+  const wrap = $('div', {className: 'json-tree'});
+  wrap.appendChild(jsonNode(obj));
+  return wrap;
+}
+
+function jsonNode(value) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed !== null && typeof parsed === 'object') return jsonNode(parsed);
+      } catch (e) { /* fall through to string render */ }
+    }
+    return jsonString(value);
+  }
+  if (value === null) return $('span', {className: 'jt-null'}, 'null');
+  if (value === undefined) return $('span', {className: 'jt-null'}, 'undefined');
+  if (typeof value === 'boolean') return $('span', {className: 'jt-bool'}, String(value));
+  if (typeof value === 'number') return $('span', {className: 'jt-num'}, String(value));
+  if (Array.isArray(value)) return jsonArray(value);
+  if (typeof value === 'object') return jsonObject(value);
+  return $('span', null, String(value));
+}
+
+function jsonString(s) {
+  if (s.includes('\n')) {
+    return $('div', {className: 'jt-str jt-multiline'}, s);
+  }
+  return $('span', {className: 'jt-str'}, '"' + s + '"');
+}
+
+function jsonCollapsible(summaryText, buildBody) {
+  const wrap = $('div', {className: 'jt-coll'});
+  const toggle = $('span', {className: 'jt-toggle'}, '▼');
+  const summary = $('span', {className: 'jt-summary'}, summaryText);
+  const header = $('div', {className: 'jt-header'}, toggle, summary);
+  const body = $('div', {className: 'jt-body'});
+  buildBody(body);
+  let open = true;
+  header.addEventListener('click', () => {
+    open = !open;
+    toggle.textContent = open ? '▼' : '▶';
+    body.style.display = open ? '' : 'none';
+  });
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function jsonArray(arr) {
+  if (arr.length === 0) return $('span', {className: 'jt-empty'}, '[]');
+  return jsonCollapsible('[' + arr.length + ']', (body) => {
+    arr.forEach((item, i) => {
+      const child = jsonNode(item);
+      const isBlock = child.classList && child.classList.contains('jt-coll');
+      const row = $('div', {className: 'jt-row'});
+      row.appendChild($('span', {className: 'jt-key'}, i + ':'));
+      if (isBlock) {
+        row.classList.add('jt-row-block');
+        row.appendChild(child);
+      } else {
+        row.appendChild(child);
+      }
+      body.appendChild(row);
+    });
+  });
+}
+
+function jsonObject(obj) {
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return $('span', {className: 'jt-empty'}, '{}');
+  return jsonCollapsible('{' + keys.length + (keys.length > 1 ? ' fields' : ' field') + '}', (body) => {
+    keys.forEach(k => {
+      const child = jsonNode(obj[k]);
+      const isBlock = child.classList && (child.classList.contains('jt-coll') || child.classList.contains('jt-multiline'));
+      const row = $('div', {className: 'jt-row'});
+      row.appendChild($('span', {className: 'jt-key'}, k + ':'));
+      if (isBlock) {
+        row.classList.add('jt-row-block');
+        row.appendChild(child);
+      } else {
+        row.appendChild(child);
+      }
+      body.appendChild(row);
+    });
+  });
 }
 
 function collapsible(title, content, startOpen) {
