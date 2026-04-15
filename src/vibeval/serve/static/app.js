@@ -238,8 +238,10 @@ async function handleRoute() {
    ================================================================ */
 const NAV_ICONS = {
   overview: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>',
+  contract: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 1.5h7l3 3V14a.5.5 0 01-.5.5h-10A.5.5 0 012 14V2a.5.5 0 01.5-.5z"/><path d="M10 1.5V4h3"/><path d="M5 8h6M5 11h4"/></svg>',
   analysis: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 4v4l3 2"/></svg>',
   design: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L6 8l-2 4 4-2 6-6-2-2z"/><path d="M10 4l2 2"/></svg>',
+  datasets: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4"/><path d="M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8"/></svg>',
   trends: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,12 5,7 9,9 14,3"/><circle cx="14" cy="3" r="1" fill="currentColor"/></svg>',
   comparisons: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2v12M12 2v12M1 8h14"/></svg>',
   home: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7l6-5 6 5v6a1 1 0 01-1 1H3a1 1 0 01-1-1V7z"/></svg>',
@@ -264,8 +266,10 @@ async function updateSidebar(feature) {
     nav.appendChild($('div', {className: 'nav-section'}, feature));
     const links = [
       { href: `#/features/${feature}`, text: 'Overview', icon: 'overview' },
+      { href: `#/features/${feature}/contract`, text: 'Contract', icon: 'contract' },
       { href: `#/features/${feature}/analysis`, text: 'Analysis', icon: 'analysis' },
       { href: `#/features/${feature}/design`, text: 'Design', icon: 'design' },
+      { href: `#/features/${feature}/datasets`, text: 'Datasets', icon: 'datasets' },
       { href: `#/features/${feature}/trends`, text: 'Trends', icon: 'trends' },
       { href: `#/features/${feature}/comparisons`, text: 'Comparisons', icon: 'comparisons' },
     ];
@@ -357,47 +361,72 @@ async function renderFeaturesList() {
 }
 
 /* ================================================================
-   Page: Feature Detail
+   Page: Feature Detail (Overview)
    ================================================================ */
 async function renderFeatureDetail(params) {
   const feature = params.feature;
   updateSidebar(feature);
-  const data = await api('GET', `/features/${feature}`);
+  const [data, contract] = await Promise.all([
+    api('GET', `/features/${feature}`),
+    api('GET', `/features/${feature}/contract`).catch(() => null),
+  ]);
   const wrap = $('div', {className: 'stagger'});
   wrap.appendChild(breadcrumb({href:'#/', text:'Features'}, {text: feature}));
   wrap.appendChild($('div', {className: 'page-title'}, feature));
 
-  // Datasets
-  const dsCard = $('div', {className: 'card'});
-  const dsHeader = $('div', {style:'display:flex;justify-content:space-between;align-items:center'});
-  dsHeader.appendChild($('h2', null, 'Datasets'));
-  dsHeader.appendChild($('button', {className:'btn btn-primary btn-sm', onClick: () => showCreateDatasetModal(feature)}, '+ New'));
-  dsCard.appendChild(dsHeader);
+  // Headline stats — use server-computed item_count (compact overview
+  // endpoint does not serialize items, so we cannot sum them client-side).
+  const itemCount = data.item_count != null
+    ? data.item_count
+    : (data.datasets || []).reduce((a, ds) => a + (ds.item_count || (ds.items||[]).length || 0), 0);
+  const latestRun = (data.runs || []).slice().reverse()[0];
+  const latestBs = latestRun ? (latestRun.binary_stats || {}) : {};
+  const latestPr = latestBs.pass_rate != null ? (latestBs.pass_rate * 100).toFixed(0) + '%' : '-';
+  const latestPrColor = latestBs.pass_rate >= 1 ? 'var(--green)' : latestBs.pass_rate >= 0.8 ? 'var(--yellow)' : latestBs.pass_rate != null ? 'var(--red)' : 'var(--text-dim)';
 
-  if (data.datasets.length === 0) {
-    dsCard.appendChild($('p', {style:'color:var(--text-dim)'}, 'No datasets yet.'));
-  } else {
-    data.datasets.forEach(ds => {
-      const row = $('div', {style:'display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s'});
-      row.addEventListener('mouseenter', () => row.style.background = 'rgba(255,255,255,.02)');
-      row.addEventListener('mouseleave', () => row.style.background = 'transparent');
-      row.appendChild($('div', null,
-        $('strong', {style:'color:var(--text)'}, ds.name),
-        $('span', {style:'color:var(--text-dim);margin-left:10px;font-size:13px'}, ds.description || ''),
-        $('span', {style:'color:var(--text-dim);margin-left:10px;font-size:12px;font-family:var(--font-mono)'}, (ds.items||[]).length + ' items')
-      ));
-      row.appendChild($('div', null,
-        $('span', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, (ds.judge_specs||[]).length + ' specs')
-      ));
-      row.addEventListener('click', () => navigate(`#/features/${feature}/datasets/${ds.name}`));
-      dsCard.appendChild(row);
-    });
+  const stats = $('div', {className: 'stats'});
+  stats.appendChild(statBox(data.datasets.length, 'Datasets', 'var(--text)'));
+  stats.appendChild(statBox(itemCount, 'Items', 'var(--text)'));
+  stats.appendChild(statBox(data.runs.length, 'Runs', 'var(--text)'));
+  stats.appendChild(statBox(latestPr, 'Latest Pass Rate', latestPrColor));
+  wrap.appendChild(stats);
+
+  // Contract snapshot
+  const contractCard = $('div', {className: 'card'});
+  const ctHeader = $('div', {style:'display:flex;justify-content:space-between;align-items:center'});
+  ctHeader.appendChild($('h2', null, 'Contract'));
+  if (contract) {
+    ctHeader.appendChild($('button', {className:'btn btn-sm', onClick: () => navigate(`#/features/${feature}/contract`)}, 'View full contract →'));
   }
-  wrap.appendChild(dsCard);
+  contractCard.appendChild(ctHeader);
+  if (!contract) {
+    contractCard.appendChild($('p', {style:'color:var(--text-dim)'}, 'No contract.yaml found. The contract skill creates this during /vibeval negotiation.'));
+  } else {
+    const meta = $('div', {style:'display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px'});
+    if (contract.rigor) meta.appendChild(badge('rigor: ' + contract.rigor, contract.rigor === 'strict' ? 'badge-fail' : contract.rigor === 'light' ? 'badge-rule' : 'badge-gate'));
+    if (contract.output_language) meta.appendChild(badge('lang: ' + contract.output_language, 'badge-llm'));
+    if (contract.updated) meta.appendChild($('span', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, 'updated ' + contract.updated));
+    contractCard.appendChild(meta);
 
-  // Runs
+    const reqCount = (contract.requirements || []).length;
+    const gapCount = (contract.known_gaps || []).length;
+    const fbCount = (contract.feedback_log || []).length;
+    const snapshot = $('div', {style:'display:flex;gap:24px;font-size:13px;color:var(--text-secondary)'});
+    snapshot.appendChild($('span', null, $('strong', {style:'color:var(--text)'}, String(reqCount)), ' requirement' + (reqCount === 1 ? '' : 's')));
+    snapshot.appendChild($('span', null, $('strong', {style:'color:var(--text)'}, String(gapCount)), ' known gap' + (gapCount === 1 ? '' : 's')));
+    snapshot.appendChild($('span', null, $('strong', {style:'color:var(--text)'}, String(fbCount)), ' feedback entr' + (fbCount === 1 ? 'y' : 'ies')));
+    contractCard.appendChild(snapshot);
+  }
+  wrap.appendChild(contractCard);
+
+  // Recent runs (last 5)
   const runCard = $('div', {className: 'card'});
-  runCard.appendChild($('h2', null, 'Runs'));
+  const runHeader = $('div', {style:'display:flex;justify-content:space-between;align-items:center'});
+  runHeader.appendChild($('h2', null, 'Recent Runs'));
+  if (data.runs.length > 5) {
+    runHeader.appendChild($('span', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, 'showing latest 5 of ' + data.runs.length));
+  }
+  runCard.appendChild(runHeader);
 
   if (data.runs.length === 0) {
     runCard.appendChild($('p', {style:'color:var(--text-dim)'}, 'No runs yet.'));
@@ -407,7 +436,7 @@ async function renderFeatureDetail(params) {
       $('th', null, 'Run ID'), $('th', null, 'Tests'), $('th', null, 'Pass Rate'), $('th', null, 'Duration')
     )));
     const tbody = $('tbody');
-    data.runs.slice().reverse().forEach(r => {
+    data.runs.slice().reverse().slice(0, 5).forEach(r => {
       const bs = r.binary_stats || {};
       const pr = bs.pass_rate != null ? (bs.pass_rate * 100).toFixed(0) + '%' : '-';
       const prColor = bs.pass_rate >= 1 ? 'var(--green)' : bs.pass_rate >= 0.8 ? 'var(--yellow)' : bs.pass_rate != null ? 'var(--red)' : '';
@@ -423,6 +452,157 @@ async function renderFeatureDetail(params) {
     runCard.appendChild(tbl);
   }
   wrap.appendChild(runCard);
+
+  return wrap;
+}
+
+/* ================================================================
+   Page: Datasets List (dedicated tab)
+   ================================================================ */
+async function renderDatasetsList(params) {
+  const feature = params.feature;
+  updateSidebar(feature);
+  const datasets = await api('GET', `/features/${feature}/datasets`);
+  const wrap = $('div', {className: 'stagger'});
+  wrap.appendChild(breadcrumb({href:'#/', text:'Features'}, {href:`#/features/${feature}`, text:feature}, {text:'Datasets'}));
+
+  const header = $('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px'});
+  header.appendChild($('div', {className:'page-title', style:'margin:0'}, 'Datasets'));
+  header.appendChild($('button', {className:'btn btn-primary', onClick: () => showCreateDatasetModal(feature)}, '+ New Dataset'));
+  wrap.appendChild(header);
+
+  if (!datasets || datasets.length === 0) {
+    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No datasets yet. Click "+ New Dataset" or run /vibeval to generate them.')));
+    return wrap;
+  }
+
+  const card = $('div', {className:'card'});
+  const tbl = $('table');
+  tbl.appendChild($('thead', null, $('tr', null,
+    $('th', null, 'Name'), $('th', null, 'Description'), $('th', null, 'Items'), $('th', null, 'Specs'), $('th', null, 'Tags')
+  )));
+  const tbody = $('tbody');
+  datasets.forEach(ds => {
+    const tagCell = $('td', null);
+    (ds.tags || []).forEach(t => { tagCell.appendChild(badge(t, 'badge-rule')); tagCell.appendChild($('span', null, ' ')); });
+    const row = $('tr', {className:'clickable', onClick: () => navigate(`#/features/${feature}/datasets/${ds.name}`)},
+      $('td', null, $('strong', {style:'color:var(--text)'}, ds.name)),
+      $('td', {style:'color:var(--text-secondary);font-size:13px'}, ds.description || '-'),
+      $('td', {style:'font-family:var(--font-mono)'}, String((ds.items||[]).length)),
+      $('td', {style:'font-family:var(--font-mono);color:var(--text-dim)'}, String((ds.judge_specs||[]).length)),
+      tagCell,
+    );
+    tbody.appendChild(row);
+  });
+  tbl.appendChild(tbody);
+  card.appendChild(tbl);
+  wrap.appendChild(card);
+
+  return wrap;
+}
+
+/* ================================================================
+   Page: Contract
+   ================================================================ */
+async function renderContract(params) {
+  const { feature } = params;
+  updateSidebar(feature);
+  const contract = await api('GET', `/features/${feature}/contract`);
+  const wrap = $('div', {className: 'stagger'});
+  wrap.appendChild(breadcrumb({href:'#/', text:'Features'}, {href:`#/features/${feature}`, text:feature}, {text:'Contract'}));
+  wrap.appendChild($('div', {className: 'page-title'}, 'Contract'));
+
+  if (!contract) {
+    wrap.appendChild($('div', {className:'card'}, $('p', {style:'color:var(--text-dim)'}, 'No contract.yaml found. The contract skill creates this during /vibeval negotiation.')));
+    return wrap;
+  }
+
+  // Meta
+  const metaCard = $('div', {className:'card'});
+  metaCard.appendChild($('h2', null, 'Meta'));
+  const metaDl = $('dl', {className:'spec-detail'});
+  if (contract.feature) { metaDl.appendChild($('dt', null, 'Feature')); metaDl.appendChild($('dd', null, contract.feature)); }
+  if (contract.created) { metaDl.appendChild($('dt', null, 'Created')); metaDl.appendChild($('dd', null, contract.created)); }
+  if (contract.updated) { metaDl.appendChild($('dt', null, 'Updated')); metaDl.appendChild($('dd', null, contract.updated)); }
+  if (contract.rigor) { metaDl.appendChild($('dt', null, 'Rigor')); metaDl.appendChild($('dd', null, contract.rigor)); }
+  if (contract.output_language) { metaDl.appendChild($('dt', null, 'Output Language')); metaDl.appendChild($('dd', null, contract.output_language)); }
+  metaCard.appendChild(metaDl);
+  wrap.appendChild(metaCard);
+
+  // Requirements
+  const reqs = contract.requirements || [];
+  if (reqs.length > 0) {
+    const card = $('div', {className:'card'});
+    card.appendChild($('h2', null, `Requirements (${reqs.length})`));
+    const tbl = $('table');
+    tbl.appendChild($('thead', null, $('tr', null, $('th', null, 'ID'), $('th', null, 'Source'), $('th', null, 'Description'))));
+    const tbody = $('tbody');
+    reqs.forEach(r => {
+      const sourceCls = r.source === 'user' ? 'badge-pass' : r.source === 'brainstorm' ? 'badge-llm' : r.source === 'code' ? 'badge-rule' : 'badge-gate';
+      tbody.appendChild($('tr', null,
+        $('td', {style:'font-family:var(--font-mono);font-weight:600;color:var(--accent)'}, r.id || '-'),
+        $('td', null, r.source ? badge(r.source, sourceCls) : '-'),
+        $('td', {style:'font-size:13px;color:var(--text-secondary);line-height:1.5'}, r.description || '-'),
+      ));
+    });
+    tbl.appendChild(tbody);
+    card.appendChild(tbl);
+    wrap.appendChild(card);
+  }
+
+  // Known gaps
+  const gaps = contract.known_gaps || [];
+  if (gaps.length > 0) {
+    const card = $('div', {className:'card'});
+    card.appendChild($('h2', null, `Known Gaps (${gaps.length})`));
+    gaps.forEach(g => {
+      const d = $('div', {style:'padding:12px 0;border-bottom:1px solid var(--border)'});
+      if (g.requirement) d.appendChild($('div', {style:'margin-bottom:6px'}, badge(g.requirement, 'badge-fail')));
+      if (g.gap) d.appendChild($('p', {style:'font-size:13px;color:var(--text-secondary);line-height:1.6;margin:0'}, g.gap));
+      card.appendChild(d);
+    });
+    wrap.appendChild(card);
+  }
+
+  // Quality criteria
+  const qc = contract.quality_criteria;
+  if (qc && typeof qc === 'object' && Object.keys(qc).length > 0) {
+    const card = $('div', {className:'card'});
+    card.appendChild($('h2', null, 'Quality Criteria'));
+    Object.entries(qc).forEach(([dim, def]) => {
+      const d = $('div', {style:'padding:12px 0;border-bottom:1px solid var(--border)'});
+      d.appendChild($('div', {style:'display:flex;align-items:center;gap:8px;margin-bottom:6px'},
+        $('strong', {style:'color:var(--text);font-family:var(--font-display)'}, dim)
+      ));
+      if (def && typeof def === 'object') {
+        if (def.bar) d.appendChild($('p', {style:'font-size:13px;color:var(--text-secondary);line-height:1.5;margin:4px 0'}, $('strong', {style:'color:var(--text-dim)'}, 'bar: '), def.bar));
+        if (def.user_emphasis) d.appendChild($('p', {style:'font-size:13px;color:var(--accent);line-height:1.5;margin:4px 0'}, $('strong', {style:'color:var(--text-dim)'}, 'user_emphasis: '), def.user_emphasis));
+      }
+      card.appendChild(d);
+    });
+    wrap.appendChild(card);
+  }
+
+  // Feedback log
+  const fb = contract.feedback_log || [];
+  if (fb.length > 0) {
+    const card = $('div', {className:'card'});
+    card.appendChild($('h2', null, `Feedback Log (${fb.length})`));
+    const tbl = $('table');
+    tbl.appendChild($('thead', null, $('tr', null, $('th', null, 'Date'), $('th', null, 'Phase'), $('th', null, 'Feedback'), $('th', null, 'Action'))));
+    const tbody = $('tbody');
+    fb.forEach(entry => {
+      tbody.appendChild($('tr', null,
+        $('td', {style:'font-family:var(--font-mono);color:var(--text-dim);font-size:12px'}, entry.date || '-'),
+        $('td', null, entry.phase ? badge(entry.phase, 'badge-llm') : '-'),
+        $('td', {style:'font-size:13px;color:var(--text-secondary)'}, entry.feedback || '-'),
+        $('td', {style:'font-size:13px;color:var(--text-secondary)'}, entry.action || '-'),
+      ));
+    });
+    tbl.appendChild(tbody);
+    card.appendChild(tbl);
+    wrap.appendChild(card);
+  }
 
   return wrap;
 }
@@ -546,6 +726,23 @@ function renderSpec(spec) {
 /* ================================================================
    Page: Run Detail
    ================================================================ */
+function classifyResult(r) {
+  const jrs = r.judge_results || [];
+  if (jrs.length === 0) return 'na';
+  const hasFailure = jrs.some(j => { const sp = j.spec || {}; return (sp.method === 'rule' || sp.scoring === 'binary') && j.score === 0; });
+  if (hasFailure) return 'fail';
+  const allPass = jrs.every(j => { const sp = j.spec || {}; if (sp.method === 'rule' || sp.scoring === 'binary') return j.score === 1; return j.score >= 4; });
+  if (allPass) return 'pass';
+  return 'mixed';
+}
+
+function statusBadgeFor(status) {
+  if (status === 'fail') return badge('FAIL', 'badge-fail');
+  if (status === 'pass') return badge('PASS', 'badge-pass');
+  if (status === 'mixed') return badge('MIXED', 'badge-gate');
+  return badge('N/A', '');
+}
+
 async function renderRunDetail(params) {
   const { feature, run_id } = params;
   updateSidebar(feature);
@@ -599,104 +796,194 @@ async function renderRunDetail(params) {
     wrap.appendChild(card);
   }
 
-  // Results table
-  const resCard = $('div', {className: 'card'});
-  resCard.appendChild($('h2', null, 'Test Results'));
+  // Pre-compute per-result classifications and enumerate filter options
+  const classified = data.results.map((r, idx) => ({ idx, r, status: classifyResult(r) }));
+  const datasetOptions = Array.from(new Set(classified.map(c => c.r.dataset).filter(Boolean))).sort();
+
+  // Filter state (live)
+  const filters = { search: '', status: 'all', dataset: 'all' };
+
+  // Filter controls
+  const filterCard = $('div', {className: 'card'});
+  const filterHeader = $('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'});
+  filterHeader.appendChild($('h2', {style:'margin:0'}, 'Test Results'));
+  const counter = $('span', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'});
+  filterHeader.appendChild(counter);
+  filterCard.appendChild(filterHeader);
+
+  const filterBar = $('div', {style:'display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px'});
+
+  const searchInp = $('input', {type:'text', placeholder:'Search test name or item id...', style:'flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);font-family:var(--font-body)'});
+  searchInp.addEventListener('input', () => { filters.search = searchInp.value.trim().toLowerCase(); applyFilters(); });
+  filterBar.appendChild(searchInp);
+
+  const statusSel = $('select', {style:'padding:8px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);font-family:var(--font-mono)'});
+  [['all','All statuses'],['pass','Pass'],['fail','Fail'],['mixed','Mixed'],['na','N/A']].forEach(([v, l]) => statusSel.appendChild($('option', {value: v}, l)));
+  statusSel.addEventListener('change', () => { filters.status = statusSel.value; applyFilters(); });
+  filterBar.appendChild(statusSel);
+
+  if (datasetOptions.length > 1) {
+    const dsSel = $('select', {style:'padding:8px 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:13px;background:var(--bg);color:var(--text);font-family:var(--font-mono)'});
+    dsSel.appendChild($('option', {value:'all'}, 'All datasets'));
+    datasetOptions.forEach(d => dsSel.appendChild($('option', {value: d}, d)));
+    dsSel.addEventListener('change', () => { filters.dataset = dsSel.value; applyFilters(); });
+    filterBar.appendChild(dsSel);
+  }
+
+  const resetBtn = $('button', {className:'btn btn-sm', onClick: () => {
+    filters.search = ''; filters.status = 'all'; filters.dataset = 'all';
+    searchInp.value = ''; statusSel.value = 'all';
+    const dsSel = filterBar.querySelectorAll('select')[1];
+    if (dsSel) dsSel.value = 'all';
+    applyFilters();
+  }}, 'Reset');
+  filterBar.appendChild(resetBtn);
+
+  filterCard.appendChild(filterBar);
+
+  // Table
   const tbl = $('table');
   tbl.appendChild($('thead', null, $('tr', null,
     $('th', null, 'Test'), $('th', null, 'Dataset'), $('th', null, 'Item'),
     $('th', null, 'Judges'), $('th', null, 'Status'), $('th', null, 'Duration')
   )));
   const tbody = $('tbody');
-  data.results.forEach((r, idx) => {
-    const jrs = r.judge_results || [];
-    const hasFailure = jrs.some(j => { const sp = j.spec || {}; return (sp.method === 'rule' || sp.scoring === 'binary') && j.score === 0; });
-    const allPass = jrs.length > 0 && jrs.every(j => { const sp = j.spec || {}; if (sp.method === 'rule' || sp.scoring === 'binary') return j.score === 1; return j.score >= 4; });
-    const status = jrs.length === 0 ? badge('N/A', '') : hasFailure ? badge('FAIL', 'badge-fail') : allPass ? badge('PASS', 'badge-pass') : badge('MIXED', 'badge-gate');
-    const row = $('tr', {className:'clickable', onClick: () => { document.getElementById('result-'+idx)?.scrollIntoView({behavior:'smooth'}); }},
-      $('td', {style:'font-weight:500'}, r.test_name), $('td', null, r.dataset), $('td', null, r.item_id),
-      $('td', null, jrs.length + ''), $('td', null, status), $('td', {style:'color:var(--text-dim);font-family:var(--font-mono);font-size:12px'}, formatDuration(r.duration || 0))
-    );
-    tbody.appendChild(row);
-  });
   tbl.appendChild(tbody);
-  resCard.appendChild(tbl);
-  wrap.appendChild(resCard);
+  filterCard.appendChild(tbl);
+  wrap.appendChild(filterCard);
 
-  // Detailed results
-  data.results.forEach((r, idx) => {
-    const jrs = r.judge_results || [];
-    const hasFailure = jrs.some(j => { const sp = j.spec || {}; return (sp.method === 'rule' || sp.scoring === 'binary') && j.score === 0; });
+  // Detail cards container
+  const detailWrap = $('div');
+  wrap.appendChild(detailWrap);
 
-    const card = $('div', {className: 'card result-card' + (hasFailure ? ' has-failure' : ''), id: 'result-' + idx});
-    const hdr = $('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px'});
-    hdr.appendChild($('div', null,
-      $('strong', {style:'font-size:15px;font-family:var(--font-display)'}, r.test_name),
-      $('span', {style:'color:var(--text-dim);margin-left:10px;font-size:13px;font-family:var(--font-mono)'}, r.dataset + ' / ' + r.item_id)
-    ));
-    hdr.appendChild($('div', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, formatDuration(r.duration || 0)));
-    card.appendChild(hdr);
+  function passesFilter(c) {
+    if (filters.status !== 'all' && c.status !== filters.status) return false;
+    if (filters.dataset !== 'all' && c.r.dataset !== filters.dataset) return false;
+    if (filters.search) {
+      const hay = ((c.r.test_name || '') + ' ' + (c.r.item_id || '')).toLowerCase();
+      if (!hay.includes(filters.search)) return false;
+    }
+    return true;
+  }
 
-    if (jrs.length > 0) {
-      card.appendChild(collapsible('Judge Results (' + jrs.length + ')', () => {
-        const t = $('table');
-        t.appendChild($('thead', null, $('tr', null, $('th', null, 'Method'), $('th', null, 'Rule / Criteria'), $('th', null, 'Score'), $('th', null, 'Reason'))));
-        const tb = $('tbody');
-        jrs.forEach(jr => {
-          const sp = jr.spec || {};
-          const methodBadge = badge(sp.method, sp.method === 'rule' ? 'badge-rule' : 'badge-llm');
-          const gateBadge = sp.weight === 'gate' ? badge('GATE', 'badge-gate') : null;
-          const name = sp.method === 'rule' ? sp.rule : (sp.criteria || '').substring(0, 60) + ((sp.criteria||'').length > 60 ? '...' : '');
-          tb.appendChild($('tr', null,
-            $('td', null, methodBadge, gateBadge ? $('span', null, ' ', gateBadge) : ''),
-            $('td', null, name),
-            $('td', null, scoreBadge(jr.score, sp.method, sp.scoring)),
-            $('td', {style:'font-size:13px;max-width:400px;color:var(--text-secondary)'}, jr.reason || '')
-          ));
-        });
-        t.appendChild(tb);
-        return t;
-      }, true));
+  function applyFilters() {
+    const visible = classified.filter(passesFilter);
+    counter.textContent = `showing ${visible.length} of ${classified.length}`;
+
+    // Rebuild table body
+    tbody.innerHTML = '';
+    if (visible.length === 0) {
+      tbody.appendChild($('tr', null, $('td', {colspan:'6', style:'text-align:center;color:var(--text-dim);padding:24px'}, 'No results match the current filters.')));
+    } else {
+      visible.forEach(c => {
+        const { idx, r, status } = c;
+        const row = $('tr', {className:'clickable', onClick: () => { document.getElementById('result-'+idx)?.scrollIntoView({behavior:'smooth'}); }},
+          $('td', {style:'font-weight:500'}, r.test_name),
+          $('td', null, r.dataset),
+          $('td', null, r.item_id),
+          $('td', null, String((r.judge_results || []).length)),
+          $('td', null, statusBadgeFor(status)),
+          $('td', {style:'color:var(--text-dim);font-family:var(--font-mono);font-size:12px'}, formatDuration(r.duration || 0))
+        );
+        tbody.appendChild(row);
+      });
     }
 
-    if (r.trace && r.trace.turns && r.trace.turns.length > 0) {
-      card.appendChild(collapsible('Trace (' + r.trace.turns.length + ' turn' + (r.trace.turns.length > 1 ? 's' : '') + ')', () => {
-        const w = $('div');
-        r.trace.turns.forEach(turn => {
-          const t = $('div', {className: 'turn'});
-          t.appendChild($('div', {className: 'turn-header'}, 'Turn ' + turn.turn));
-          if (turn.input) t.appendChild(collapsible('Input', () => jsonPre(turn.input)));
-          if (turn.steps && turn.steps.length > 0) {
-            const timeline = $('div', {className: 'timeline'});
-            turn.steps.forEach(step => {
-              const s = $('div', {className: 'step ' + (step.type || '')});
-              s.appendChild($('div', {className: 'step-dot'}));
-              const body = $('div', {className: 'step-body'});
-              const h = $('div', {style:'display:flex;align-items:center;gap:8px'});
-              h.appendChild($('span', {className: 'step-type'}, step.type));
-              if (step.type === 'tool_call' && step.data?.name) h.appendChild($('span', {className: 'step-header'}, step.data.name));
-              else if (step.type === 'tool_result' && step.data?.name) h.appendChild($('span', {className: 'step-header'}, step.data.name));
-              else if (step.type === 'llm_call' && step.data?.system) h.appendChild($('span', {className: 'step-header'}, step.data.system.substring(0, 60)));
-              body.appendChild(h);
-              if (step.data) body.appendChild(collapsible('Details', () => jsonPre(step.data)));
-              s.appendChild(body);
-              timeline.appendChild(s);
-            });
-            t.appendChild(timeline);
-          }
-          if (turn.output) t.appendChild(collapsible('Output', () => jsonPre(turn.output)));
-          w.appendChild(t);
-        });
-        return w;
-      }));
-    }
+    // Rebuild detail cards
+    detailWrap.innerHTML = '';
+    visible.forEach(c => {
+      detailWrap.appendChild(buildResultCard(c));
+    });
+  }
 
-    if (r.inputs) card.appendChild(collapsible('Inputs', () => jsonPre(r.inputs)));
-    if (r.outputs) card.appendChild(collapsible('Outputs', () => jsonPre(r.outputs)));
-    wrap.appendChild(card);
-  });
+  applyFilters();
 
   return wrap;
+}
+
+function buildResultCard({ idx, r, status }) {
+  const jrs = r.judge_results || [];
+  const hasFailure = status === 'fail';
+
+  const card = $('div', {className: 'card result-card' + (hasFailure ? ' has-failure' : ''), id: 'result-' + idx});
+  const hdr = $('div', {style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px'});
+  hdr.appendChild($('div', null,
+    $('strong', {style:'font-size:15px;font-family:var(--font-display)'}, r.test_name),
+    $('span', {style:'color:var(--text-dim);margin-left:10px;font-size:13px;font-family:var(--font-mono)'}, r.dataset + ' / ' + r.item_id),
+    $('span', {style:'margin-left:10px'}, statusBadgeFor(status))
+  ));
+  hdr.appendChild($('div', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, formatDuration(r.duration || 0)));
+  card.appendChild(hdr);
+
+  // Input data captured at run time. We intentionally read this from the
+  // result file's own `inputs` field rather than from the current dataset
+  // item — the dataset may have been edited since the run, and showing
+  // today's item as "what was tested" would be misleading. If `inputs`
+  // is absent, say so honestly instead of silently substituting.
+  if (r.inputs != null) {
+    card.appendChild(collapsible('Input Data (captured at run time)', () => jsonPre(r.inputs), true));
+  } else {
+    card.appendChild($('div', {style:'font-size:12px;color:var(--text-dim);margin-bottom:10px;font-style:italic'},
+      'No inputs were captured in this result file; the test runner did not record what was sent.'));
+  }
+
+  if (jrs.length > 0) {
+    card.appendChild(collapsible('Judge Results (' + jrs.length + ')', () => {
+      const t = $('table');
+      t.appendChild($('thead', null, $('tr', null, $('th', null, 'Method'), $('th', null, 'Rule / Criteria'), $('th', null, 'Score'), $('th', null, 'Reason'))));
+      const tb = $('tbody');
+      jrs.forEach(jr => {
+        const sp = jr.spec || {};
+        const methodBadge = badge(sp.method, sp.method === 'rule' ? 'badge-rule' : 'badge-llm');
+        const gateBadge = sp.weight === 'gate' ? badge('GATE', 'badge-gate') : null;
+        const name = sp.method === 'rule' ? sp.rule : (sp.criteria || '').substring(0, 60) + ((sp.criteria||'').length > 60 ? '...' : '');
+        tb.appendChild($('tr', null,
+          $('td', null, methodBadge, gateBadge ? $('span', null, ' ', gateBadge) : ''),
+          $('td', null, name),
+          $('td', null, scoreBadge(jr.score, sp.method, sp.scoring)),
+          $('td', {style:'font-size:13px;max-width:400px;color:var(--text-secondary)'}, jr.reason || '')
+        ));
+      });
+      t.appendChild(tb);
+      return t;
+    }, true));
+  }
+
+  if (r.trace && r.trace.turns && r.trace.turns.length > 0) {
+    card.appendChild(collapsible('Trace (' + r.trace.turns.length + ' turn' + (r.trace.turns.length > 1 ? 's' : '') + ')', () => {
+      const w = $('div');
+      r.trace.turns.forEach(turn => {
+        const t = $('div', {className: 'turn'});
+        t.appendChild($('div', {className: 'turn-header'}, 'Turn ' + turn.turn));
+        if (turn.input) t.appendChild(collapsible('Input', () => jsonPre(turn.input)));
+        if (turn.steps && turn.steps.length > 0) {
+          const timeline = $('div', {className: 'timeline'});
+          turn.steps.forEach(step => {
+            const s = $('div', {className: 'step ' + (step.type || '')});
+            s.appendChild($('div', {className: 'step-dot'}));
+            const body = $('div', {className: 'step-body'});
+            const h = $('div', {style:'display:flex;align-items:center;gap:8px'});
+            h.appendChild($('span', {className: 'step-type'}, step.type));
+            if (step.type === 'tool_call' && step.data?.name) h.appendChild($('span', {className: 'step-header'}, step.data.name));
+            else if (step.type === 'tool_result' && step.data?.name) h.appendChild($('span', {className: 'step-header'}, step.data.name));
+            else if (step.type === 'llm_call' && step.data?.system) h.appendChild($('span', {className: 'step-header'}, step.data.system.substring(0, 60)));
+            body.appendChild(h);
+            if (step.data) body.appendChild(collapsible('Details', () => jsonPre(step.data)));
+            s.appendChild(body);
+            timeline.appendChild(s);
+          });
+          t.appendChild(timeline);
+        }
+        if (turn.output) t.appendChild(collapsible('Output', () => jsonPre(turn.output)));
+        w.appendChild(t);
+      });
+      return w;
+    }));
+  }
+
+  // Note: r.inputs is already shown above as "Input Data (captured at run time)".
+  if (r.outputs) card.appendChild(collapsible('Outputs', () => jsonPre(r.outputs)));
+  return card;
 }
 
 /* ================================================================
@@ -1624,8 +1911,10 @@ initTheme();
    ================================================================ */
 addRoute('', renderFeaturesList);
 addRoute('features/:feature', renderFeatureDetail);
+addRoute('features/:feature/contract', renderContract);
 addRoute('features/:feature/analysis', renderAnalysis);
 addRoute('features/:feature/design', renderDesignPage);
+addRoute('features/:feature/datasets', renderDatasetsList);
 addRoute('features/:feature/datasets/:dataset', renderDatasetDetail);
 addRoute('features/:feature/runs/:run_id', renderRunDetail);
 addRoute('features/:feature/trends', renderTrends);

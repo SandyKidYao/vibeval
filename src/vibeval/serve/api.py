@@ -52,6 +52,7 @@ def register_routes(router: Router) -> None:
                 "run_count": len(runs),
                 "latest_run": runs[-1] if runs else None,
                 "latest_pass_rate": latest_summary.get("binary_stats", {}).get("pass_rate") if latest_summary else None,
+                "has_contract": (config.feature_dir(f) / "contract.yaml").exists(),
             })
         return 200, features
 
@@ -62,7 +63,24 @@ def register_routes(router: Router) -> None:
         if not fdir.exists():
             raise FileNotFoundError(f"Feature not found: {feature}")
 
+        # Compact overview: return per-dataset counts but NOT the items or
+        # judge specs. This keeps the feature Overview page cheap even when
+        # the feature has many large datasets. The dedicated Datasets tab
+        # uses /api/features/{feature}/datasets for the full payload.
         datasets = load_all_datasets(str(config.datasets_dir(feature)))
+        dataset_summaries = []
+        total_items = 0
+        for name, ds in datasets.items():
+            item_count = len(ds.items)
+            total_items += item_count
+            dataset_summaries.append({
+                "name": ds.name,
+                "description": ds.description,
+                "tags": ds.tags,
+                "item_count": item_count,
+                "spec_count": len(ds.judge_specs),
+            })
+
         runs = list_runs(str(config.results_dir(feature)))
         run_summaries = []
         for r in runs:
@@ -74,8 +92,11 @@ def register_routes(router: Router) -> None:
 
         return 200, {
             "name": feature,
-            "datasets": _serialize_datasets(datasets),
+            "dataset_count": len(dataset_summaries),
+            "item_count": total_items,
+            "datasets": dataset_summaries,
             "runs": run_summaries,
+            "has_contract": (fdir / "contract.yaml").exists(),
         }
 
     # ------------------------------------------------------------------
@@ -263,14 +284,14 @@ def register_routes(router: Router) -> None:
         if not run_dir.exists():
             raise FileNotFoundError(f"Run not found: {run_id}")
 
-        summary = load_summary(str(run_dir))
-        results = load_run(str(run_dir))
-        datasets = load_all_datasets(str(config.datasets_dir(feature)))
-
+        # Intentionally do NOT join against current datasets/ here. Datasets
+        # can be edited after a run, so joining would present the *current*
+        # dataset item as the context for a *past* run — actively misleading.
+        # The result file's own `inputs` field captures what was sent at
+        # run time and is the only historically accurate source.
         return 200, {
-            "summary": summary,
-            "results": results,
-            "datasets": _serialize_datasets(datasets),
+            "summary": load_summary(str(run_dir)),
+            "results": load_run(str(run_dir)),
         }
 
     @router.get("/api/features/{feature}/runs/{run_id}/results/{result_id}")
@@ -319,6 +340,22 @@ def register_routes(router: Router) -> None:
         if not design_dir.exists():
             return 200, None
         return 200, _load_yaml_dir(design_dir)
+
+    # ------------------------------------------------------------------
+    # Contract
+    # ------------------------------------------------------------------
+
+    @router.get("/api/features/{feature}/contract")
+    def get_contract(config: Config, params: dict, body: Any) -> tuple[int, Any]:
+        feature = _safe(params["feature"])
+        contract_path = config.feature_dir(feature) / "contract.yaml"
+        if not contract_path.exists():
+            return 200, None
+        try:
+            data = yaml.safe_load(contract_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as e:
+            raise ValueError(f"Failed to parse contract.yaml: {e}")
+        return 200, data
 
     # ------------------------------------------------------------------
     # Trends
