@@ -912,7 +912,10 @@ function buildResultCard({ idx, r, status }) {
     $('span', {style:'color:var(--text-dim);margin-left:10px;font-size:13px;font-family:var(--font-mono)'}, r.dataset + ' / ' + r.item_id),
     $('span', {style:'margin-left:10px'}, statusBadgeFor(status))
   ));
-  hdr.appendChild($('div', {style:'font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'}, formatDuration(r.duration || 0)));
+  const rightInfo = $('div', {style:'text-align:right;font-size:12px;color:var(--text-dim);font-family:var(--font-mono)'});
+  if (r.timestamp) rightInfo.appendChild($('div', null, new Date(r.timestamp * 1000).toLocaleString()));
+  rightInfo.appendChild($('div', null, formatDuration(r.duration || 0)));
+  hdr.appendChild(rightInfo);
   card.appendChild(hdr);
 
   // Input data captured at run time. We intentionally read this from the
@@ -1013,7 +1016,25 @@ async function renderAnalysis(params) {
     if (p.language) { dl.appendChild($('dt', null, 'Language')); dl.appendChild($('dd', null, p.language)); }
     if (p.test_framework) { dl.appendChild($('dt', null, 'Test Framework')); dl.appendChild($('dd', null, p.test_framework)); }
     if (p.ai_frameworks) { dl.appendChild($('dt', null, 'AI Frameworks')); dl.appendChild($('dd', null, p.ai_frameworks.join(', '))); }
+    if (p.execution_mode) { dl.appendChild($('dt', null, 'Execution Mode')); dl.appendChild($('dd', null, badge(p.execution_mode, p.execution_mode === 'agent' ? 'badge-llm' : 'badge-rule'))); }
     card.appendChild(dl);
+    wrap.appendChild(card);
+  }
+
+  if (analysis.tools && analysis.tools.length > 0) {
+    const card = $('div', {className:'card'});
+    card.appendChild($('h2', null, `Tools (${analysis.tools.length})`));
+    analysis.tools.forEach(tool => {
+      const titleParts = [tool.id];
+      if (tool.type) titleParts.push(`[${tool.type}]`);
+      card.appendChild(collapsible(titleParts.join(' '), () => {
+        const w = $('div', {style:'padding-left:12px'});
+        const rest = {};
+        Object.keys(tool).forEach(k => { if (k !== 'id' && k !== 'type') rest[k] = tool[k]; });
+        if (Object.keys(rest).length > 0) w.appendChild(jsonPre(rest));
+        return w;
+      }));
+    });
     wrap.appendChild(card);
   }
 
@@ -1164,19 +1185,9 @@ async function renderDesignPage(params) {
           card.appendChild(collapsible(titleParts.join(' '), () => {
             const w = $('div', {style:'padding-left:12px'});
             if (item.description) w.appendChild($('p', {style:'font-size:14px;margin-bottom:10px;color:var(--text-secondary);line-height:1.6'}, item.description.trim()));
-            if (item.data) {
-              const dl = $('dl', {className:'spec-detail'});
-              if (item.data.system_prompt) { dl.appendChild($('dt', null, 'System Prompt')); dl.appendChild($('dd', null, item.data.system_prompt.trim())); }
-              if (item.data.opening_message) { dl.appendChild($('dt', null, 'Opening Message')); dl.appendChild($('dd', null, item.data.opening_message)); }
-              if (item.data.behavior_rules) {
-                dl.appendChild($('dt', null, 'Behavior Rules'));
-                const ul = $('ul', {style:'margin:4px 0 0 20px;font-size:13px;color:var(--text-secondary)'});
-                item.data.behavior_rules.forEach(r => ul.appendChild($('li', {style:'margin:4px 0'}, r)));
-                dl.appendChild($('dd', null, ul));
-              }
-              if (item.data.rounds) { dl.appendChild($('dt', null, 'Rounds')); dl.appendChild($('dd', null, String(item.data.rounds))); }
-              w.appendChild(dl);
-            }
+            const rest = {};
+            Object.keys(item).forEach(k => { if (k !== 'id' && k !== 'name' && k !== 'tags' && k !== '_tags' && k !== 'description') rest[k] = item[k]; });
+            if (Object.keys(rest).length > 0) w.appendChild(jsonPre(rest));
             return w;
           }));
         });
